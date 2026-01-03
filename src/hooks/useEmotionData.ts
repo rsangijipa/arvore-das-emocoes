@@ -61,7 +61,10 @@ export const useEmotionData = (count: number = 50, seed: number = 1337) => {
             const msgIndex = messageIndices[i % messageIndices.length];
             const base = RAW_MESSAGES[msgIndex];
 
-            const visuals = mapCategoryToVisuals(base.category);
+            // Mock missing metadata for simple messages
+            const categoryList: string[] = ['alegria', 'amor', 'gratidão', 'paz', 'coragem', 'reflexão'];
+            const category = categoryList[i % categoryList.length];
+            const visuals = mapCategoryToVisuals(category);
             const drift = Math.floor(rng() * 1000000000);
 
             // Pick strict texture
@@ -69,15 +72,15 @@ export const useEmotionData = (count: number = 50, seed: number = 1337) => {
 
             return {
                 id: uuidv4(),
-                text: base.category.charAt(0).toUpperCase() + base.category.slice(1),
-                reflection: base.message, // The actual quote
+                text: category.charAt(0).toUpperCase() + category.slice(1),
+                reflection: base.text, // The actual quote
                 color: visuals.color,
                 category: visuals.category,
-                subcategory: base.tags[0] || 'geral',
+                subcategory: 'geral',
                 intensity: 3 + Math.floor(rng() * 3),
-                tags: [...base.tags, base.tone],
+                tags: ['cinematic', 'quote'],
                 timestamp: baseTimestamp - drift,
-                textureUrl: `/textures/leaves/leaf_tex_0${texNum}.png`,
+                textureUrl: `/textures/leaves/leaf_tex_0${texNum}.jpg`,
             };
         });
     }, [count, seed]);

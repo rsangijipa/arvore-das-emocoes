@@ -21,7 +21,7 @@ export const UIOverlay: React.FC = () => {
         windLevel,
         setWindLevel,
         isPaused,
-        setIsPaused,
+        togglePause: storeTogglePause,
         isCinematic,
         setCinematic,
         setReduceMotion,
@@ -49,7 +49,7 @@ export const UIOverlay: React.FC = () => {
 
     const togglePause = () => {
         soundManager.playClick();
-        setIsPaused(!isPaused);
+        storeTogglePause();
     };
 
     const nextWindLevel = () => {

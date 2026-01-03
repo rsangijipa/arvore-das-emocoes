@@ -17,14 +17,14 @@ export const Effects: React.FC<EffectsProps> = ({ quality, isCinematic }) => {
     }
 
     return (
-        <EffectComposer disableNormalPass>
+        <EffectComposer>
             {isCinematic ? (
                 <DepthOfField
                     focusDistance={0.02} // Adjusted for cinematic modal view
                     focalLength={0.4}
                     bokehScale={quality === 'High' ? 4 : 2}
                 />
-            ) : null}
+            ) : <></>}
 
             <Bloom
                 intensity={isCinematic ? 1.4 : (quality === 'High' ? 1.0 : 0.7)}

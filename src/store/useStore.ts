@@ -1,5 +1,18 @@
 import { create } from 'zustand';
 import type { EmotionData } from '../types';
+import * as THREE from 'three';
+
+export interface FocusedLeafData {
+    id: string; // emotion id if available, or generated
+    textureIndex: number;
+    instanceId: number;
+    matrix: THREE.Matrix4;
+}
+
+export interface MessageData {
+    text: string;
+    author?: string;
+}
 
 interface AppState {
     seed: number;
@@ -23,7 +36,17 @@ interface AppState {
     setWindLevel: (level: 'Off' | 'Calm' | 'Breezy') => void;
     setActiveTab: (tab: 'home' | 'gallery' | 'explore') => void;
     togglePause: () => void;
+
     triggerCameraReset: () => void;
+
+    // Cinematic Leaf Interaction
+    focusedLeaf: FocusedLeafData | null;
+    selectedMessage: MessageData | null;
+    interactionLock: boolean;
+
+    setFocusedLeaf: (data: FocusedLeafData | null) => void;
+    setSelectedMessage: (msg: MessageData | null) => void;
+    setInteractionLock: (locked: boolean) => void;
 }
 
 export const useStore = create<AppState>((set) => ({
@@ -49,4 +72,12 @@ export const useStore = create<AppState>((set) => ({
     setActiveTab: (activeTab) => set({ activeTab }),
     togglePause: () => set((state) => ({ isPaused: !state.isPaused })),
     triggerCameraReset: () => set((state) => ({ resetCameraTrigger: state.resetCameraTrigger + 1 })),
+
+    focusedLeaf: null,
+    selectedMessage: null,
+    interactionLock: false,
+
+    setFocusedLeaf: (focusedLeaf) => set({ focusedLeaf }),
+    setSelectedMessage: (selectedMessage) => set({ selectedMessage }),
+    setInteractionLock: (interactionLock) => set({ interactionLock }),
 }));

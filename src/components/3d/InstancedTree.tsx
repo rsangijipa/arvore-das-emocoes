@@ -1,15 +1,17 @@
 import React, { useMemo, useRef, useLayoutEffect, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { useFrame, useLoader, useThree, type ThreeEvent } from '@react-three/fiber';
-import { useGLTF } from '@react-three/drei';
+import { useGLTF, useTexture } from '@react-three/drei';
 import { generateProceduralTree } from '../../utils/treeGenerator';
 import { soundManager } from '../../utils/SoundManager';
+import { useStore } from '../../store/useStore';
+import { RAW_MESSAGES } from '../../data/messages';
 import type { EmotionData } from '../../types';
 import { createRng } from '../../utils/random';
 
 interface InstancedTreeProps {
     emotions: EmotionData[];
-    onLeafClick: (emotion: EmotionData) => void;
+    //    onLeafClick: (emotion: EmotionData) => void;
     onLeafHover: (emotion: EmotionData | null, x: number, y: number) => void;
     onEmotionsUpdate?: (emotions: EmotionData[]) => void;
     reduceMotion: boolean;
@@ -19,12 +21,16 @@ interface InstancedTreeProps {
     isPaused: boolean;
 }
 
-export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafClick, onLeafHover, reduceMotion, seed, isCinematic, windLevel, isPaused }) => {
+export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotions, onLeafHover, reduceMotion, seed, isCinematic, windLevel, isPaused }) => {
     // Refs
     const canopyMeshRef = useRef<THREE.InstancedMesh>(null);
     const branchMeshRef = useRef<THREE.InstancedMesh>(null);
     const emotionMeshRefs = useRef<(THREE.InstancedMesh | null)[]>([]);
     const haloRef = useRef<THREE.Mesh>(null);
+
+    // Global State
+    // const setFocusedLeaf = useStore(state => state.setFocusedLeaf); // Destructured above
+    // const focusedLeaf = useStore(state => state.focusedLeaf); // Destructured above
 
     // State
     const [hoveredEmotionIndex, setHoveredEmotionIndex] = useState<number | null>(null);
@@ -40,27 +46,73 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
     }, []);
 
     // Assets
+    // Preload textures for interactive leaves
     const textureUrls = useMemo(() => [
-        '/textures/leaves/leaf_tex_01.png',
-        '/textures/leaves/leaf_tex_02.png',
-        '/textures/leaves/leaf_tex_03.png',
-        '/textures/leaves/leaf_tex_04.png',
-        '/textures/leaves/leaf_tex_05.png'
+        '/textures/leaves/leaf_tex_01.jpg',
+        '/textures/leaves/leaf_tex_02.jpg',
+        '/textures/leaves/leaf_tex_03.jpg',
+        '/textures/leaves/leaf_tex_04.jpg',
+        '/textures/leaves/leaf_tex_05.jpg'
     ], []);
 
-    const leafMaps = useLoader(THREE.TextureLoader, [...textureUrls]);
+    const leafMaps = useLoader(THREE.TextureLoader, textureUrls);
+
+    // Store Actions
+    const {
+        focusedLeaf,
+        setFocusedLeaf,
+        interactionLock,
+        setInteractionLock,
+        setSelectedMessage
+    } = useStore();
+
     useLayoutEffect(() => {
-        leafMaps.forEach(tex => {
+        leafMaps.forEach((tex) => {
             tex.colorSpace = THREE.SRGBColorSpace;
             tex.flipY = false;
         });
     }, [leafMaps]);
 
-    const canopyMap = leafMaps[0];
+    // Simple Leaf Alpha Map (Procedural)
+    const simpleLeafAlpha = useMemo(() => {
+        const canvas = document.createElement('canvas');
+        canvas.width = 128; // Higher res for better rounded edge
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(0, 0, 128, 128);
+
+            // Draw a nice leaf shape
+            ctx.fillStyle = '#ffffff';
+            ctx.translate(64, 64);
+            ctx.beginPath();
+            // Simple elliptical leaf with point
+            ctx.moveTo(0, -60);
+            ctx.bezierCurveTo(40, -30, 40, 30, 0, 60);
+            ctx.bezierCurveTo(-40, 30, -40, -30, 0, -60);
+            ctx.fill();
+        }
+        const tex = new THREE.CanvasTexture(canvas);
+        // tex.minFilter = THREE.LinearFilter; // Default is LinearMipmapLinear which fails for non-POT if webgl1? 128 is POT.
+        return tex;
+    }, []);
+
+    // Preload emotion textures (JPG)
+    useTexture.preload([
+        '/textures/leaves/leaf_tex_01.jpg',
+        '/textures/leaves/leaf_tex_02.jpg',
+        '/textures/leaves/leaf_tex_03.jpg',
+        '/textures/leaves/leaf_tex_04.jpg',
+        '/textures/leaves/leaf_tex_05.jpg',
+    ]);
+
+    // const canopyMap = leafMaps[0];
     const emotionMaps = leafMaps;
 
     const { scene: glbScene } = useGLTF("/folha.glb");
 
+    // 1. Heavy Geometry (Emotions)
     const glbGeometry = useMemo(() => {
         let geom: THREE.BufferGeometry | null = null;
         glbScene.traverse((obj) => {
@@ -71,6 +123,23 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
         });
         return geom || new THREE.PlaneGeometry(1, 1);
     }, [glbScene]);
+
+    // 2. Light Geometry (Canopy)
+    const canopyGeometry = useMemo(() => {
+        return new THREE.PlaneGeometry(1, 1);
+    }, []);
+
+    // 3. Materials
+    const canopyMaterial = useMemo(() => (
+        <meshStandardMaterial
+            color="#90ee90" // Light green
+            alphaMap={simpleLeafAlpha}
+            transparent
+            alphaTest={0.5}
+            depthWrite={false}
+            side={THREE.DoubleSide}
+        />
+    ), [simpleLeafAlpha]);
 
     const scalesRef = useRef<Float32Array | null>(null);
     const branchScalesRef = useRef<Float32Array | null>(null);
@@ -123,42 +192,53 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
     const { camera, controls } = useThree();
 
     useLayoutEffect(() => {
-        if (groupRef.current) {
-            // Apply Grounding
-            groupRef.current.position.y = treeBounds.offsetY;
+        if (!groupRef.current || !camera) return;
 
-            // Apply Framing
-            // Center target at the tree's center (shifted by offset)
-            const groundedCenter = treeBounds.center.clone();
-            groundedCenter.y += treeBounds.offsetY;
+        // --- Ground Anchoring Logic ---
+        // 1. Define Ground Plane (Y=0)
+        const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
-            // Adjust camera distance based on size
-            const maxDim = Math.max(treeBounds.size.x, treeBounds.size.y, treeBounds.size.z);
-            const distance = maxDim * 2.0; // Multiplier for framing
+        // 2. Define Anchor Point in Normalized Device Coordinates (NDC)
+        // Values derived from user request: x~0.05, y~-0.59
+        const anchorNDC = new THREE.Vector2(0.05, -0.59);
+        const clearanceY = 0.05; // Small lift to prevent z-fighting/clipping
 
-            const targetPos = groundedCenter.clone().add(new THREE.Vector3(0, maxDim * 0.2, distance)); // Slightly up and back
+        // 3. Raycast from Camera to Ground
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(anchorNDC, camera);
 
-            // Smoothly move camera or set instantly?
-            // "Ao clicar regenerar ... framing estável" implies instant or fast match.
-            // Let's set it.
+        const targetPoint = new THREE.Vector3();
+        const hit = raycaster.ray.intersectPlane(groundPlane, targetPoint);
+
+        if (hit) {
+            // 4. Calculate Vertical Offset
+            // treeBounds.offsetY is the value needed to bring min.y to 0.
+            // We want the tree's "feet" (min.y) to be at 'targetPoint.y + clearanceY'.
+            // targetPoint.y is 0.
+            // So new Y = 0 + offsetY + clearanceY.
+            const newY = treeBounds.offsetY + clearanceY;
+
+            // 5. Apply Position
+            groupRef.current.position.set(targetPoint.x, newY, targetPoint.z);
+            groupRef.current.updateMatrixWorld();
+
+            console.log(` Tree Anchored: World[${targetPoint.x.toFixed(2)}, ${newY.toFixed(2)}, ${targetPoint.z.toFixed(2)}]`);
+
+            // 6. Optional: Focus controls on the tree center without moving camera
             if (controls) {
-                // eslint-disable-next-line
+                // @ts-ignore
                 const orb = controls as any;
-                orb.target.copy(groundedCenter);
+                // Calculate world center of the tree
+                const worldCenter = treeBounds.center.clone().add(groupRef.current.position);
+                // Adjust target so rotation pivots around the tree
+                orb.target.copy(worldCenter);
                 orb.update();
             }
-
-            // We only set camera if it's far off or first run? 
-            // Better to keep user control if they moved it, BUT requirement says "camera deve manter arvore centralizada sempre".
-            // So we force it on seed change.
-            camera.position.lerp(targetPos, 0.5); // Soft update or hard set?
-            // Let's rely on standard smooth interaction but set the target. 
-            // Force position might be jarring. Let's just set target and maybe adjust position if too far.
-            // Requirement: "Adjust OrbitControls.target... Ajustar câmera... distance = boundingSphere * 2.2".
-
-            camera.position.set(groundedCenter.x, groundedCenter.y + maxDim * 0.5, groundedCenter.z + distance);
-            camera.lookAt(groundedCenter);
+        } else {
+            // Fallback if ray misses ground (e.g. looking at sky)
+            groupRef.current.position.set(0, treeBounds.offsetY, 0);
         }
+
     }, [treeBounds, camera, controls]);
 
     const branchTransforms = useMemo(() => {
@@ -181,7 +261,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
             branches.forEach((_, i) => {
                 branchMeshRef.current!.getMatrixAt(i, dummy.matrix);
                 dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-                dummy.scale.set(0, 0, 0);
+                dummy.scale.set(0.0001, 0.0001, 0.0001);
                 dummy.updateMatrix();
                 branchMeshRef.current!.setMatrixAt(i, dummy.matrix);
             });
@@ -207,7 +287,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
         // Helper to extract index from "/leaf_texture_N.png"
         const getTexIdx = (url?: string) => {
             if (!url) return 0;
-            const match = url.match(/_(\d)\.png/);
+            const match = url.match(/_(\d)\.jpg/); // Changed to .jpg
             return match ? (parseInt(match[1]) - 1) : 0;
         };
 
@@ -303,8 +383,14 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
                 canopyMeshRef.current!.setMatrixAt(i, dummy.matrix);
 
                 const cRng = createRng(seed * 7 + i);
-                const color = new THREE.Color('#2d5a27');
-                color.offsetHSL((cRng() - 0.5) * 0.1, (cRng() - 0.5) * 0.15, (cRng() - 0.5) * 0.1);
+                const color = new THREE.Color('#90ee90'); // Base light green
+
+                // 30% variation in Hue/Sat/Lightness
+                const hVar = (cRng() - 0.5) * 0.15; // Hue +/- 0.075
+                const sVar = (cRng() - 0.5) * 0.30; // Sat +/- 0.15
+                const lVar = (cRng() - 0.5) * 0.30; // Lightness +/- 0.15
+
+                color.offsetHSL(hVar, sVar, lVar);
                 canopyMeshRef.current!.setColorAt(i, color.convertSRGBToLinear());
             });
             canopyMeshRef.current.instanceMatrix.needsUpdate = true;
@@ -419,6 +505,17 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
                     const originalIdx = instanceLookup[gIdx][i];
                     const scaleIdx = offset + originalIdx;
 
+                    // IF THIS IS THE FOCUSED LEAF, FORCE SCALE 0 (Hide it, HeroLeaf takes over)
+                    if (focusedLeaf && focusedLeaf.textureIndex === gIdx && focusedLeaf.instanceId === i) {
+                        dummy.matrix.copy(mat);
+                        dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+                        dummy.scale.set(0, 0, 0);
+                        dummy.updateMatrix();
+                        mesh.setMatrixAt(i, dummy.matrix);
+                        needsUpdateGroups[gIdx] = true;
+                        return; // Skip wind/growth for this frame
+                    }
+
                     if (time < delays[scaleIdx] + 4.5) return;
 
                     const target = targetScales[scaleIdx];
@@ -446,7 +543,15 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
         }
 
         if (needsUpdateBranch && branchMeshRef.current) branchMeshRef.current.instanceMatrix.needsUpdate = true;
-        if (needsUpdateCanopy && canopyMeshRef.current) canopyMeshRef.current.instanceMatrix.needsUpdate = true;
+        if (needsUpdateCanopy && canopyMeshRef.current) {
+            // DEBUG: Check first instance matrix
+            const testMat = new THREE.Matrix4();
+            canopyMeshRef.current.getMatrixAt(0, testMat);
+            if (testMat.elements.some(e => isNaN(e))) {
+                console.error('DEBUG: NaN detected in canopy instance 0');
+            }
+            canopyMeshRef.current.instanceMatrix.needsUpdate = true;
+        }
 
         needsUpdateGroups.forEach((needsUpdate, gIdx) => {
             if (needsUpdate && emotionMeshRefs.current[gIdx]) {
@@ -461,7 +566,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
                 // Determine group from texture - Safely
                 let gIdx = 0;
                 if (em.textureUrl) {
-                    const match = em.textureUrl.match(/_(\d)\.png/);
+                    const match = em.textureUrl.match(/_(\d)\.jpg/); // Changed to .jpg
                     if (match && match[1]) {
                         gIdx = parseInt(match[1]) - 1;
                     }
@@ -484,7 +589,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
         }
     });
 
-    const handlePointerAction = (e: ThreeEvent<PointerEvent>, type: 'hover' | 'click') => {
+    const handlePointerAction = (e: ThreeEvent<PointerEvent | MouseEvent>, type: 'hover' | 'click') => {
         if (isCinematic) return;
         e.stopPropagation();
 
@@ -507,6 +612,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
             if (!emotion) return;
 
             if (type === 'hover') {
+                if (interactionLock) return; // Ignore hover if locked
                 setCursorPointer(true);
                 if (hoveredEmotionIndex !== originalIdx) {
                     setHoveredEmotionIndex(originalIdx);
@@ -514,24 +620,42 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
                     onLeafHover(emotion, e.clientX, e.clientY);
                 }
             } else {
-                // Determine exact world position of the clicked leaf instance
-                // We need to re-query the matrix because it might be moving
-                if (emotionMeshRefs.current[gIdx]) {
-                    const dummy = new THREE.Object3D(); // Create local dummy
-                    emotionMeshRefs.current[gIdx]!.getMatrixAt(instanceId, dummy.matrix);
-                    dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+                // CLICK HANDLER
+                if (interactionLock) return;
 
-                    // Transform local to world if the group has transformations (it has groupRef y-offset!)
+                // 1. Lock Interaction
+                setInteractionLock(true);
+                setTimeout(() => setInteractionLock(false), 500); // 500ms debounce
+
+                // 2. Select Message (Random for now, or based on emotion?)
+                // User requirement: "mensagem aleatória do array local"
+                // Let's use a simple RNG based on time or random to ensure variety
+                const msgIdx = Math.floor(Math.random() * RAW_MESSAGES.length);
+                const selectedMsg = RAW_MESSAGES[msgIdx];
+                setSelectedMessage(selectedMsg);
+
+                // 3. Capture World Matrix
+                if (emotionMeshRefs.current[gIdx]) {
+                    const dummy = new THREE.Object3D();
+                    emotionMeshRefs.current[gIdx]!.getMatrixAt(instanceId, dummy.matrix);
+
+                    // Pre-multiply with group world matrix
+                    const worldMatrix = dummy.matrix.clone();
                     if (groupRef.current) {
-                        dummy.position.applyMatrix4(groupRef.current.matrixWorld);
+                        worldMatrix.premultiply(groupRef.current.matrixWorld);
                     }
 
-                    // Update emotion with exact position for CameraRig
-                    emotion.position = [dummy.position.x, dummy.position.y, dummy.position.z];
+                    // 4. Set Focused Leaf (Triggers Hero Animation)
+                    setFocusedLeaf({
+                        id: emotion.id,
+                        textureIndex: gIdx,
+                        instanceId: instanceId,
+                        matrix: worldMatrix
+                    });
                 }
 
                 soundManager.playClick();
-                onLeafClick(emotion);
+                // onLeafClick(emotion); // Disabled to use new cinematic flow
             }
         }
     };
@@ -544,10 +668,15 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
                 <meshStandardMaterial color="#3E3228" roughness={0.9} />
             </instancedMesh>
 
-            {/* Canopy */}
-            <instancedMesh ref={canopyMeshRef} args={[undefined, undefined, canopyTransforms.length]} castShadow receiveShadow visible={stage >= 2}>
-                <planeGeometry args={[1, 1]} />
-                <meshStandardMaterial map={canopyMap} transparent side={THREE.DoubleSide} alphaTest={0.5} depthWrite={false} />
+            {/* Canopy (Light Leaf) */}
+            <instancedMesh
+                ref={canopyMeshRef}
+                args={[canopyGeometry, undefined, canopyTransforms.length]}
+                castShadow
+                receiveShadow
+                visible={stage >= 2}
+            >
+                {canopyMaterial}
             </instancedMesh>
 
             {/* Emotions - 5 Groups */}
@@ -582,4 +711,6 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
             </mesh>
         </group>
     );
-};
+});
+
+InstancedTree.displayName = 'InstancedTree';

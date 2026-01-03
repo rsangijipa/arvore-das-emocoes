@@ -3,7 +3,7 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment, PerspectiveCamera, AdaptiveDpr, Loader, Html } from '@react-three/drei';
 import { motion } from "framer-motion";
 import { InstancedTree } from './InstancedTree';
-import { Effects } from './Effects';
+// import { Effects } from './Effects';
 import { HeroLeaf } from './HeroLeaf';
 import { CameraRig } from './CameraRig';
 import { Background360 } from '../scene/Background360';
@@ -16,46 +16,49 @@ import { ListView } from '../ui/ListView';
 import { ArrowLeft } from 'lucide-react';
 import type { EmotionData } from '../../types';
 import { useStore } from '../../store/useStore';
+import { MessageCard } from '../ui/MessageCard';
 
 
 
 export const EmotionForest: React.FC = () => {
-    const {
-        emotions,
-        seed,
-        quality,
-        reduceMotion,
-        isCinematic,
-        setCinematic,
-        focusedEmotion,
-        setFocusedEmotion,
-        setEmotions,
-        resetCameraTrigger,
-        activeTab,
-        windLevel,
-        isPaused
-    } = useStore();
+    const emotions = useStore(state => state.emotions);
+    const seed = useStore(state => state.seed);
+    const quality = useStore(state => state.quality);
+    const reduceMotion = useStore(state => state.reduceMotion);
+    const isCinematic = useStore(state => state.isCinematic);
+    const setCinematic = useStore(state => state.setCinematic);
+    const focusedEmotion = useStore(state => state.focusedEmotion);
+    const setFocusedEmotion = useStore(state => state.setFocusedEmotion);
+    const setEmotions = useStore(state => state.setEmotions);
+    const activeTab = useStore(state => state.activeTab);
+    const windLevel = useStore(state => state.windLevel);
+    const isPaused = useStore(state => state.isPaused);
     const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
 
-    const handleLeafHover = (emotion: EmotionData | null, x: number, y: number) => {
-        if (isCinematic || activeTab !== 'home') return;
+    const handleLeafHover = React.useCallback((emotion: EmotionData | null, x: number, y: number) => {
+        // Disable tooltip if a leaf is focused
+        if (isCinematic || activeTab !== 'home' || focusedEmotion) {
+            setTooltip(null);
+            return;
+        }
+
         if (emotion) {
-            setTooltip({ text: emotion.text, x, y });
+            setTooltip({ text: emotion.subcategory || emotion.category, x, y });
         } else {
             setTooltip(null);
         }
-    };
+    }, [isCinematic, activeTab, focusedEmotion]);
 
-    const handleLeafClickInternal = (emotion: EmotionData) => {
+    const handleLeafClickInternal = React.useCallback((emotion: EmotionData) => {
         if (activeTab !== 'home') return;
         setFocusedEmotion(emotion);
         setCinematic(true);
-    };
+    }, [activeTab, setFocusedEmotion, setCinematic]);
 
-    const handleExitCinematic = () => {
+    const handleExitCinematic = React.useCallback(() => {
         setCinematic(false);
         setFocusedEmotion(null);
-    };
+    }, [setCinematic, setFocusedEmotion]);
 
     return (
         <div
@@ -95,7 +98,7 @@ export const EmotionForest: React.FC = () => {
                             <Suspense fallback={<Html center><div className="text-white text-sm font-serif">Carregando Floresta...</div></Html>}>
                                 <InstancedTree
                                     emotions={emotions}
-                                    onLeafClick={handleLeafClickInternal}
+                                    // onLeafClick={handleLeafClickInternal}
                                     onLeafHover={handleLeafHover}
                                     onEmotionsUpdate={setEmotions}
                                     reduceMotion={reduceMotion}
@@ -118,21 +121,16 @@ export const EmotionForest: React.FC = () => {
                                     autoRotate={activeTab === 'explore'}
                                     autoRotateSpeed={0.4}
                                 />
-                                {/* Hero Leaf Animation: Detaches and flies to screen */}
-                                {isCinematic && focusedEmotion && (
-                                    <HeroLeaf
-                                        emotion={focusedEmotion}
-                                        tint={focusedEmotion.color}
-                                    />
-                                )}
+
+                                <HeroLeaf />
 
                                 <CameraRig
-                                    isCinematic={isCinematic}
-                                    targetPosition={undefined} // Disable camera movement on click
+                                    targetPosition={undefined}
                                 />
                                 {quality !== 'Low' && <LightParticles />}
                                 {/* Disable Effects when cinematic to prevent WebGL context conflicts */}
-                                {!isCinematic && <Effects quality={quality} isCinematic={isCinematic || activeTab !== 'home'} />}
+                                {/* TEMPORARILY DISABLED FOR DEBUGGING */}
+                                {/* {!isCinematic && <Effects quality={quality} isCinematic={isCinematic || activeTab !== 'home'} />} */}
                             </Suspense>
                         </Canvas>
                     </ErrorBoundary>
@@ -160,6 +158,7 @@ export const EmotionForest: React.FC = () => {
                         </div>
                     )}
                     <LeafQuoteOverlay />
+                    <MessageCard />
 
                     {/* Main Navigation - Elegant Light Mode */}
                     {!isCinematic && <BottomNav />}

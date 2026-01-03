@@ -11,7 +11,7 @@ interface Background360Props {
 export const Background360: React.FC<Background360Props> = ({
     rotationSpeed = 0.015,
 }) => {
-    const texture = useLoader(THREE.TextureLoader, '/fundo.png');
+    const texture = useLoader(THREE.TextureLoader, '/fundo.jpeg');
     const { isCinematic } = useStore();
     const sphereRef = useRef<THREE.Mesh>(null);
     const { scene } = useThree();

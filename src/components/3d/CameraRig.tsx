@@ -3,11 +3,10 @@ import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 
 interface CameraRigProps {
-    isCinematic: boolean;
     targetPosition?: [number, number, number];
 }
 
-export const CameraRig: React.FC<CameraRigProps> = ({ isCinematic, targetPosition }) => {
+export const CameraRig: React.FC<CameraRigProps> = ({ targetPosition }) => {
     // const { camera } = useThree(); // Removed unused
     // const vec = new THREE.Vector3(); // Removed unused
 
