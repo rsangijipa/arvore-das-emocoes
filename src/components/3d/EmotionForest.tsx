@@ -1,6 +1,6 @@
 import React, { Suspense, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Environment, PerspectiveCamera, AdaptiveDpr, Loader, Bounds, useBounds } from '@react-three/drei';
+import { OrbitControls, Environment, PerspectiveCamera, AdaptiveDpr, Loader } from '@react-three/drei';
 import { InstancedTree } from './InstancedTree';
 import { Effects } from './Effects';
 import { CameraRig } from './CameraRig';
@@ -15,13 +15,7 @@ import { ListView } from '../ui/ListView';
 import type { EmotionData } from '../../types';
 import { useStore } from '../../store/useStore';
 
-const BoundsHandler = ({ trigger }: { trigger: number }) => {
-    const bounds = useBounds();
-    React.useEffect(() => {
-        bounds.refresh().clip().fit();
-    }, [trigger, bounds]);
-    return null;
-};
+
 
 export const EmotionForest: React.FC = () => {
     const {
@@ -91,21 +85,17 @@ export const EmotionForest: React.FC = () => {
                             <fog attach="fog" args={['#22190c', 40, 150]} />
 
                             <Suspense fallback={null}>
-                                {/* @ts-expect-error - Bounds library mismatch */}
-                                <Bounds observe margin={1.2} clip damping={6} fit>
-                                    <BoundsHandler trigger={resetCameraTrigger} />
-                                    <InstancedTree
-                                        emotions={emotions}
-                                        onLeafClick={handleLeafClickInternal}
-                                        onLeafHover={handleLeafHover}
-                                        onEmotionsUpdate={setEmotions}
-                                        reduceMotion={reduceMotion}
-                                        seed={seed}
-                                        isCinematic={isCinematic || activeTab !== 'home'}
-                                        windLevel={windLevel}
-                                        isPaused={isPaused}
-                                    />
-                                </Bounds>
+                                <InstancedTree
+                                    emotions={emotions}
+                                    onLeafClick={handleLeafClickInternal}
+                                    onLeafHover={handleLeafHover}
+                                    onEmotionsUpdate={setEmotions}
+                                    reduceMotion={reduceMotion}
+                                    seed={seed}
+                                    isCinematic={isCinematic || activeTab !== 'home'}
+                                    windLevel={windLevel}
+                                    isPaused={isPaused}
+                                />
                                 <OrbitControls
                                     makeDefault
                                     enabled={!isCinematic && activeTab === 'home'}

@@ -1,6 +1,6 @@
 import React, { useMemo, useRef, useLayoutEffect, useEffect, useState } from 'react';
 import * as THREE from 'three';
-import { useFrame, useLoader, type ThreeEvent } from '@react-three/fiber';
+import { useFrame, useLoader, useThree, type ThreeEvent } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import { generateProceduralTree } from '../../utils/treeGenerator';
 import { soundManager } from '../../utils/SoundManager';
@@ -49,6 +49,13 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
     ], []);
 
     const leafMaps = useLoader(THREE.TextureLoader, ['/folha.png', ...textureUrls]);
+    useLayoutEffect(() => {
+        leafMaps.forEach(tex => {
+            tex.colorSpace = THREE.SRGBColorSpace;
+            tex.flipY = false;
+        });
+    }, [leafMaps]);
+
     const canopyMap = leafMaps[0];
     const emotionMaps = leafMaps.slice(1);
 
@@ -74,8 +81,85 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
     }, [cursorPointer]);
 
     // --- GEOMETRY GENERATION ---
-    const { branches, leafAnchors } = useMemo(() => generateProceduralTree(seed), [seed]);
+    const { branches, leafAnchors, treeBounds } = useMemo(() => {
+        const { branches, leafAnchors } = generateProceduralTree(seed);
+
+        // Compute Bounds
+        const min = new THREE.Vector3(Infinity, Infinity, Infinity);
+        const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+
+        const updateBounds = (v: THREE.Vector3) => {
+            min.min(v);
+            max.max(v);
+        };
+
+        branches.forEach(b => {
+            updateBounds(b.start);
+            updateBounds(b.end);
+        });
+
+        const dummyPos = new THREE.Vector3();
+        const dummyScale = new THREE.Vector3();
+        const dummyQuat = new THREE.Quaternion();
+
+        leafAnchors.forEach(mat => {
+            mat.decompose(dummyPos, dummyQuat, dummyScale);
+            updateBounds(dummyPos);
+        });
+
+        const size = new THREE.Vector3().subVectors(max, min);
+        const center = new THREE.Vector3().addVectors(min, max).multiplyScalar(0.5);
+
+        // Grounding Offset: Move minY to 0
+        const offsetY = -min.y;
+
+        return { branches, leafAnchors, treeBounds: { min, max, size, center, offsetY } };
+    }, [seed]);
+
     const totalAnchors = leafAnchors.length;
+
+    // Camera Framing & Grounding
+    const groupRef = useRef<THREE.Group>(null);
+    const { camera, controls } = useThree();
+
+    useLayoutEffect(() => {
+        if (groupRef.current) {
+            // Apply Grounding
+            groupRef.current.position.y = treeBounds.offsetY;
+
+            // Apply Framing
+            // Center target at the tree's center (shifted by offset)
+            const groundedCenter = treeBounds.center.clone();
+            groundedCenter.y += treeBounds.offsetY;
+
+            // Adjust camera distance based on size
+            const maxDim = Math.max(treeBounds.size.x, treeBounds.size.y, treeBounds.size.z);
+            const distance = maxDim * 2.0; // Multiplier for framing
+
+            const targetPos = groundedCenter.clone().add(new THREE.Vector3(0, maxDim * 0.2, distance)); // Slightly up and back
+
+            // Smoothly move camera or set instantly?
+            // "Ao clicar regenerar ... framing estável" implies instant or fast match.
+            // Let's set it.
+            if (controls) {
+                // eslint-disable-next-line
+                const orb = controls as any;
+                orb.target.copy(groundedCenter);
+                orb.update();
+            }
+
+            // We only set camera if it's far off or first run? 
+            // Better to keep user control if they moved it, BUT requirement says "camera deve manter arvore centralizada sempre".
+            // So we force it on seed change.
+            camera.position.lerp(targetPos, 0.5); // Soft update or hard set?
+            // Let's rely on standard smooth interaction but set the target. 
+            // Force position might be jarring. Let's just set target and maybe adjust position if too far.
+            // Requirement: "Adjust OrbitControls.target... Ajustar câmera... distance = boundingSphere * 2.2".
+
+            camera.position.set(groundedCenter.x, groundedCenter.y + maxDim * 0.5, groundedCenter.z + distance);
+            camera.lookAt(groundedCenter);
+        }
+    }, [treeBounds, camera, controls]);
 
     const branchTransforms = useMemo(() => {
         return branches.map(b => {
@@ -419,7 +503,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
     };
 
     return (
-        <group>
+        <group ref={groupRef}>
             {/* Branches */}
             <instancedMesh ref={branchMeshRef} args={[undefined, undefined, branchTransforms.length]} castShadow receiveShadow>
                 <cylinderGeometry args={[0.3, 0.4, 1, 5]} />

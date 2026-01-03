@@ -33,7 +33,9 @@ export const Background360: React.FC<Background360Props> = ({
         };
     }, [scene, texture]);
 
-    useFrame((state) => {
+    const materialRef = useRef<THREE.MeshBasicMaterial>(null);
+
+    useFrame((state, delta) => {
         if (!texture || !sphereRef.current) return;
 
         // Manual Scene Background Cleanup
@@ -48,11 +50,15 @@ export const Background360: React.FC<Background360Props> = ({
         sphereRef.current.rotation.y = rotation;
         sphereRef.current.position.set(0, 0, 0);
 
-        // Rotate environment to match sphere
+        // Rotate environment
         if ('environmentRotation' in scene) {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             // eslint-disable-next-line
             (scene as any).environmentRotation.y = rotation;
+        }
+
+        // Fade In
+        if (materialRef.current) {
+            materialRef.current.opacity = THREE.MathUtils.lerp(materialRef.current.opacity, 1, delta * 2.0);
         }
     });
 
@@ -60,10 +66,13 @@ export const Background360: React.FC<Background360Props> = ({
         <mesh ref={sphereRef} scale={[-1, 1, 1]}>
             <sphereGeometry args={[500, 60, 40]} />
             <meshBasicMaterial
+                ref={materialRef}
                 map={texture}
                 side={THREE.BackSide}
                 toneMapped={false}
                 fog={false}
+                transparent={true}
+                opacity={0}
             />
         </mesh>
     );

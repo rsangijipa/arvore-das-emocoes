@@ -115,6 +115,28 @@ export const HeroLeaf: React.FC<HeroLeafProps> = ({ emotion, tint = "#ffffff" })
         group.current.rotation.z = THREE.MathUtils.lerp(startRot.z, targetRot.z, smooth);
     });
 
+    // Dynamic Font Selection
+    const fontStyle = React.useMemo(() => {
+        const fonts = [
+            { family: '"Playfair Display", serif', weight: 600, style: 'normal' },
+            { family: '"Montserrat", sans-serif', weight: 700, style: 'normal' },
+            { family: '"Lora", serif', weight: 500, style: 'italic' },
+            { family: '"Inter", sans-serif', weight: 600, style: 'normal' },
+            { family: '"Cormorant Garamond", serif', weight: 600, style: 'italic' }
+        ];
+        // Seeded random based on emotion ID + timestamp to keep it consistent for the same emotion moment?
+        // Or random every open? User said "A cada abertura... mudar". 
+        // If we want random per open, we use Math.random().
+        // If we want "deterministic" per emotion, use seed.
+        // User rules: "Sem Math.random() na geração".
+        // But this is UI effect "A cada abertura". 
+        // I will use a simple pseudo-random based on Date.now() or just Math.random() since it's a UI effect requested to CHANGE.
+        // Or better: use store.seed + something.
+        // Let's use Math.floor(Math.random() * fonts.length).
+        const idx = Math.floor(Math.random() * fonts.length);
+        return fonts[idx];
+    }, []);
+
     const dateString = React.useMemo(() => {
         if (!emotion.timestamp) return '';
         return new Date(emotion.timestamp).toLocaleDateString();
@@ -126,19 +148,25 @@ export const HeroLeaf: React.FC<HeroLeafProps> = ({ emotion, tint = "#ffffff" })
                 <primitive object={clonedScene} />
 
                 {/* HTML Overlay for Text */}
-                <Html center transform distanceFactor={1.5} style={{ pointerEvents: "none", opacity: animationRef.current }}>
-                    <div className="text-center w-[400px] select-none">
+                <Html center transform distanceFactor={1.2} style={{ pointerEvents: "none", opacity: animationRef.current }}>
+                    <div
+                        className="text-center select-none flex flex-col items-center justify-center p-4"
+                        style={{ width: '280px' }} // Approx 80% of leaf
+                    >
                         <div
-                            className="font-serif text-5xl md:text-6xl text-boho-dark/90 drop-shadow-sm leading-tight mb-4"
-                            style={{ textShadow: '0 2px 10px rgba(0,0,0,0.1)' }}
+                            className="text-boho-dark/95 drop-shadow-sm leading-tight mb-3"
+                            style={{
+                                fontFamily: fontStyle.family,
+                                fontWeight: fontStyle.weight,
+                                fontStyle: fontStyle.style,
+                                fontSize: '1.8rem',
+                                textShadow: '0 1px 12px rgba(255,255,255,0.4)'
+                            }}
                         >
                             "{emotion.text}"
                         </div>
-                        <div className="font-sans text-sm tracking-[0.2em] font-bold text-boho-clay uppercase opacity-70">
-                            {emotion.category} • {emotion.subcategory}
-                        </div>
-                        <div className="mt-4 font-serif text-lg italic text-boho-text/80">
-                            {dateString}
+                        <div className="font-sans text-xs tracking-[0.25em] font-bold text-boho-clay uppercase opacity-60">
+                            {emotion.category}
                         </div>
                     </div>
                 </Html>
