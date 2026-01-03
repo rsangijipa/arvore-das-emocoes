@@ -71,7 +71,7 @@ export const EmotionForest: React.FC = () => {
                     >
                         <PerspectiveCamera makeDefault position={[0, 20, 70]} fov={45} />
 
-                        <AdaptiveDpr pixelated />
+                        <AdaptiveDpr />
                         <Environment preset="sunset" background blur={0.8} /> {/* Sunset = Warmer light */}
 
                         <directionalLight

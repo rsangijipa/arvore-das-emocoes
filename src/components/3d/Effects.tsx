@@ -22,12 +22,14 @@ export const Effects: React.FC<EffectsProps> = ({ quality, isCinematic }) => {
 
     return (
         <EffectComposer>
-            <DepthOfField
-                focusDistance={isCinematic ? 0.005 : 0.02} // Closer focus for cinematic
-                focalLength={isCinematic ? 0.2 : 0.15}
-                bokehScale={isCinematic ? (quality === 'High' ? 5 : 3) : (quality === 'High' ? 3 : 1.5)}
-                height={quality === 'High' ? 720 : 480}
-            />
+            {isCinematic ? (
+                <DepthOfField
+                    focusDistance={0.005}
+                    focalLength={0.2}
+                    bokehScale={quality === 'High' ? 5 : 3}
+                    height={480}
+                />
+            ) : <></>}
             <Bloom
                 intensity={isCinematic ? 1.5 : (quality === 'High' ? 1.2 : 0.8)}
                 luminanceThreshold={isCinematic ? 0.2 : 0.4} // Glows more easily

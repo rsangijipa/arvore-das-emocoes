@@ -1,26 +1,37 @@
 import React, { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
+import { useStore } from '../../store/useStore';
+import { createRng } from '../../utils/random';
 
 export const LightParticles: React.FC = () => {
     const meshRef = useRef<THREE.InstancedMesh>(null);
     const count = 300;
+    const { seed } = useStore();
+
+    // Fix Bug #4: Deterministic RNG
+    const randomFor = useMemo(() => createRng(seed * 4421), [seed]);
 
     // Initial random positions
     const initialPositions = useMemo(() => {
+        const rng = randomFor; // local alias
         const arr = new Float32Array(count * 3);
         for (let i = 0; i < count; i++) {
-            arr[i * 3] = (Math.random() - 0.5) * 60;
-            arr[i * 3 + 1] = Math.random() * 40;
-            arr[i * 3 + 2] = (Math.random() - 0.5) * 60;
+            arr[i * 3] = (rng() - 0.5) * 60;
+            arr[i * 3 + 1] = rng() * 40;
+            arr[i * 3 + 2] = (rng() - 0.5) * 60;
         }
         return arr;
-    }, []);
+    }, [count, randomFor]);
 
     // Random speeds
     const speeds = useMemo(() => {
-        return new Float32Array(count).map(() => 0.2 + Math.random() * 0.5);
-    }, []);
+        const rng = randomFor;
+        // Need to advance/fork rng or just loop? 
+        // createRng returns a function that updates state, so reusing it continues sequence. 
+        // But useMemo might run twice. 'randomFor' instance is stable per seed.
+        return new Float32Array(count).map(() => 0.2 + rng() * 0.5);
+    }, [count, randomFor]);
 
     const dummy = useMemo(() => new THREE.Object3D(), []);
 
