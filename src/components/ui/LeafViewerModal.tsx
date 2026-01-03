@@ -54,34 +54,74 @@ export const LeafViewerModal: React.FC<LeafViewerModalProps> = ({ emotion, onClo
                             <X size={28} />
                         </button>
 
-                        <div className="w-full h-full relative">
-                            <Canvas
-                                className="pointer-events-auto cursor-move"
-                                camera={{ position: [0, 0, 8], fov: 35 }} // Narrow FOV for portrait feel
-                                dpr={[1, 2]}
-                            >
-                                <ambientLight intensity={0.8} />
-                                <directionalLight position={[5, 2, 5]} intensity={1.8} castShadow color="#fffaf0" />
-                                <directionalLight position={[-5, 0, 2]} intensity={1.2} color="#ffd700" />
+                        <div className="w-full h-full flex flex-col md:flex-row relative">
+                            {/* 3D Visualizer Side */}
+                            <div className="w-full md:w-1/2 h-1/2 md:h-full relative bg-boho-clay/5">
+                                <Canvas
+                                    className="pointer-events-auto cursor-move"
+                                    camera={{ position: [0, 0, 7], fov: 35 }}
+                                    dpr={[1, 2]}
+                                >
+                                    <ambientLight intensity={0.8} />
+                                    <directionalLight position={[5, 2, 5]} intensity={1.8} castShadow color="#fffaf0" />
+                                    <directionalLight position={[-5, 0, 2]} intensity={1.2} color="#ffd700" />
 
-                                <Suspense fallback={null}>
-                                    {/* Studio Logic for Best GLB Display */}
-                                    <Environment preset="studio" blur={0.8} />
+                                    <Suspense fallback={null}>
+                                        <Environment preset="studio" blur={0.8} />
+                                        <MessageLeaf emotion={emotion} />
+                                        <ContactShadows position={[0, -2.5, 0]} opacity={0.4} scale={10} blur={2.5} far={4} color="#3E3228" />
+                                        <OrbitControls enableZoom={true} enablePan={false} minPolarAngle={Math.PI / 3} maxPolarAngle={Math.PI / 1.5} />
+                                    </Suspense>
+                                </Canvas>
 
-                                    <MessageLeaf emotion={emotion} />
+                                <div className="absolute bottom-6 w-full text-center text-boho-sage text-[10px] font-bold tracking-[0.25em] uppercase pointer-events-none opacity-60">
+                                    Toque para Girar
+                                </div>
+                            </div>
 
-                                    <ContactShadows position={[0, -2.5, 0]} opacity={0.4} scale={10} blur={2.5} far={4} color="#3E3228" />
-                                    <OrbitControls
-                                        enableZoom={true}
-                                        enablePan={false}
-                                        minPolarAngle={Math.PI / 3}
-                                        maxPolarAngle={Math.PI / 1.5}
-                                    />
-                                </Suspense>
-                            </Canvas>
+                            {/* Content Side */}
+                            <div className="w-full md:w-1/2 h-1/2 md:h-full p-8 md:p-12 overflow-y-auto">
+                                <div className="mb-8">
+                                    <span className="inline-block px-3 py-1 bg-boho-sage/10 text-boho-sage text-[10px] font-bold rounded-full uppercase tracking-widest mb-4">
+                                        {emotion.category} • {emotion.subcategory}
+                                    </span>
+                                    <h2 className="text-4xl font-serif text-boho-dark mb-2">{emotion.text}</h2>
+                                    <div className="flex gap-1 mb-6">
+                                        {[1, 2, 3, 4, 5].map((i) => (
+                                            <div
+                                                key={i}
+                                                className={`h-1.5 w-8 rounded-full ${i <= emotion.intensity ? 'bg-boho-terracotta' : 'bg-boho-sage/20'}`}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
 
-                            <div className="absolute bottom-6 w-full text-center text-boho-sage text-xs font-bold tracking-[0.25em] uppercase pointer-events-none opacity-80">
-                                Toque para Girar
+                                <div className="space-y-8">
+                                    <section>
+                                        <h4 className="text-[10px] font-bold text-boho-clay uppercase tracking-[0.2em] mb-4 opacity-50">Reflexão Guiada</h4>
+                                        <div className="space-y-6">
+                                            {[
+                                                { q: "O que aconteceu?", a: emotion.reflection },
+                                                { q: "O que eu senti no corpo?", a: "Senti uma leve pressão no peito..." },
+                                                { q: "O que eu precisava?", a: "Precisava de calma e compreensão." },
+                                                { q: "O que eu escolho fazer agora?", a: "Vou respirar fundo e aceitar o momento." }
+                                            ].map((item, idx) => (
+                                                <div key={idx} className="border-l-2 border-boho-sage/20 pl-4 py-1">
+                                                    <p className="text-boho-clay/60 text-[11px] italic mb-1">{item.q}</p>
+                                                    <p className="text-boho-text text-sm leading-relaxed">{item.a}</p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </section>
+
+                                    <div className="pt-4 flex flex-wrap gap-2">
+                                        {emotion.tags.map(tag => (
+                                            <span key={tag} className="text-[10px] text-boho-clay/60 bg-white border border-boho-clay/10 px-2 py-0.5 rounded-lg">
+                                                #{tag}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </motion.div>

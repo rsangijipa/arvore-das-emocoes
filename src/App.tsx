@@ -6,8 +6,14 @@ import type { EmotionData } from './types';
 import './App.css';
 
 function App() {
+  const initialEmotions = useEmotionData(150);
+  const [emotions, setEmotions] = useState<EmotionData[]>([]);
   const [activeEmotion, setActiveEmotion] = useState<EmotionData | null>(null);
-  const emotions = useEmotionData(150);
+
+  // Sync initial emotions
+  useState(() => {
+    setEmotions(initialEmotions);
+  });
 
   // The layout is handled inside EmotionForest to ensure full coverage
   return (
@@ -15,6 +21,7 @@ function App() {
       <EmotionForest
         emotions={emotions}
         onLeafClick={setActiveEmotion}
+        onEmotionsUpdate={setEmotions}
       />
 
       {/* Modal is global */}
