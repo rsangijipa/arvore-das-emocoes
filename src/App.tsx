@@ -1,33 +1,28 @@
-import { useState } from 'react';
+import { useEffect } from 'react';
+import { useStore } from './store/useStore';
 import { EmotionForest } from './components/3d/EmotionForest';
 import { LeafViewerModal } from './components/ui/LeafViewerModal';
 import { useEmotionData } from './hooks/useEmotionData';
-import type { EmotionData } from './types';
 import './App.css';
 
 function App() {
   const initialEmotions = useEmotionData(150);
-  const [emotions, setEmotions] = useState<EmotionData[]>([]);
-  const [activeEmotion, setActiveEmotion] = useState<EmotionData | null>(null);
+  const { focusedEmotion, setEmotions, setFocusedEmotion } = useStore();
 
   // Sync initial emotions
-  useState(() => {
+  useEffect(() => {
     setEmotions(initialEmotions);
-  });
+  }, [initialEmotions, setEmotions]);
 
   // The layout is handled inside EmotionForest to ensure full coverage
   return (
     <>
-      <EmotionForest
-        emotions={emotions}
-        onLeafClick={setActiveEmotion}
-        onEmotionsUpdate={setEmotions}
-      />
+      <EmotionForest />
 
       {/* Modal is global */}
       <LeafViewerModal
-        emotion={activeEmotion}
-        onClose={() => setActiveEmotion(null)}
+        emotion={focusedEmotion}
+        onClose={() => setFocusedEmotion(null)}
       />
     </>
   );

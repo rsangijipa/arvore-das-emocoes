@@ -35,7 +35,7 @@ export const ListView: React.FC<ListViewProps> = ({ emotions, onLeafClick }) => 
                                     style={{ backgroundColor: emotion.color }}
                                 />
                                 <span className="text-[10px] font-bold text-boho-clay/40 uppercase tracking-widest">
-                                    {new Date(emotion.timestamp || Date.now()).toLocaleDateString('pt-BR')}
+                                    {new Date(emotion.timestamp ?? 0).toLocaleDateString('pt-BR')}
                                 </span>
                             </div>
 

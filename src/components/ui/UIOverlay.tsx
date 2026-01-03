@@ -1,28 +1,106 @@
 import React from 'react';
-import { RefreshCcw } from 'lucide-react';
+import { RefreshCcw, Play, Pause, Wind, Monitor, Maximize, HelpCircle } from 'lucide-react';
 import { soundManager } from '../../utils/SoundManager';
 
-interface UIOverlayProps {
-    onRegenerate: () => void;
-    quality: string;
-    onQualityChange: (quality: string) => void;
-    seed: number;
-    reduceMotion: boolean;
-    onReduceMotionChange: (val: boolean) => void;
-}
+import { useStore } from '../../store/useStore';
 
-export const UIOverlay: React.FC<UIOverlayProps> = ({
-    onRegenerate,
-    quality,
-    onQualityChange,
-    seed,
-    reduceMotion,
-    onReduceMotionChange
-}) => {
+export const UIOverlay: React.FC = () => {
+    const {
+        seed,
+        quality,
+        reduceMotion,
+        isCinematic,
+        regenerateSeed,
+        setQuality,
+        setReduceMotion,
+        setCinematic,
+        windLevel,
+        isPaused,
+        setWindLevel,
+        togglePause,
+        triggerCameraReset,
+        setFocusedEmotion
+    } = useStore();
+
+    // Hotkeys
+    React.useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            // Ignore if typing in input (though we don't have many)
+            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+
+            switch (e.key.toLowerCase()) {
+                case 'r':
+                    triggerCameraReset();
+                    break;
+                case ' ':
+                    e.preventDefault(); // Prevent scroll
+                    togglePause();
+                    break;
+                case 'q': {
+                    const qualities = ['Low', 'Balanced', 'High'];
+                    const next = qualities[(qualities.indexOf(quality) + 1) % qualities.length];
+                    setQuality(next);
+                    break;
+                }
+                case 'w': {
+                    const levels: ('Off' | 'Calm' | 'Breezy')[] = ['Off', 'Calm', 'Breezy'];
+                    const next = levels[(levels.indexOf(windLevel) + 1) % levels.length];
+                    setWindLevel(next);
+                    break;
+                }
+                case 'escape':
+                    if (isCinematic) setCinematic(false);
+                    setFocusedEmotion(null);
+                    break;
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [quality, windLevel, isCinematic, triggerCameraReset, togglePause, setQuality, setWindLevel, setCinematic, setFocusedEmotion]);
+
+    const onRegenerate = regenerateSeed;
+    // const onQualityChange = setQuality; // Removed as used directly
+    const onReduceMotionChange = setReduceMotion;
+    const onExitCinematic = () => setCinematic(false);
+    if (isCinematic) {
+        return (
+            <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-20 flex gap-4">
+                <button
+                    onClick={() => {
+                        soundManager.playRegenerate();
+                        onRegenerate();
+                    }}
+                    className="
+                        group flex items-center justify-center gap-3 py-3 px-8
+                        bg-black/20 backdrop-blur-xl border border-white/10 text-white
+                        font-serif tracking-widest font-medium text-xs uppercase rounded-full
+                        hover:bg-white/10 hover:border-white/30 transition-all duration-500
+                    "
+                >
+                    <RefreshCcw size={14} className="opacity-70 group-hover:rotate-180 transition-transform duration-700" />
+                    Renovar Árvore
+                </button>
+
+                <button
+                    onClick={onExitCinematic}
+                    className="
+                        group flex items-center justify-center gap-3 py-3 px-8
+                        bg-white/90 backdrop-blur-xl border border-white/40 text-boho-dark
+                        font-serif tracking-widest font-medium text-xs uppercase rounded-full
+                        hover:bg-white hover:scale-105 transition-all duration-300 shadow-lg shadow-white/10
+                    "
+                >
+                    Voltar
+                </button>
+            </div>
+        );
+    }
+
     return (
         <div className="absolute top-8 left-8 z-10 pointer-events-none">
             <div className="
-                bg-white/30 backdrop-blur-md border border-white/20 
+                bg-white/30 backdrop-blur-md border border-white/20
                 shadow-[0_8px_32px_rgba(62,50,40,0.1)] rounded-3xl p-8 max-w-sm
                 pointer-events-auto transition-transform hover:scale-[1.01] duration-500
             ">
@@ -75,33 +153,69 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({
                 </div>
 
                 <div className="flex flex-col gap-2">
-                    <span className="text-[10px] font-bold tracking-widest text-boho-clay/60 uppercase">Qualidade Visual</span>
-                    <div className="flex gap-2 p-1 bg-boho-clay/5 rounded-2xl">
-                        {['Low', 'Balanced', 'High'].map((q) => (
-                            <button
-                                key={q}
-                                onClick={() => onQualityChange(q)}
-                                className={`
-                                    flex-1 py-1.5 px-3 rounded-xl text-[10px] font-bold transition-all duration-300
-                                    ${quality === q
-                                        ? 'bg-white text-boho-terracotta shadow-sm'
-                                        : 'text-boho-clay/40 hover:text-boho-clay/60'}
-                                `}
-                            >
-                                {q === 'Low' ? 'ECONÔMICO' : q === 'Balanced' ? 'EQUILIBRADO' : 'QUALIDADE'}
-                            </button>
-                        ))}
+                    <span className="text-[10px] font-bold tracking-widest text-boho-clay/60 uppercase">Controles</span>
+
+                    {/* Control Bar */}
+                    <div className="flex flex-wrap gap-2 p-2 bg-boho-clay/5 rounded-2xl">
+                        <button
+                            onClick={() => triggerCameraReset()}
+                            className="p-2 rounded-xl text-boho-clay/60 hover:bg-white hover:text-boho-terracotta transition-colors"
+                            title="Resetar Câmera (R)"
+                        >
+                            <Maximize size={16} />
+                        </button>
+
+                        <button
+                            onClick={togglePause}
+                            className="p-2 rounded-xl text-boho-clay/60 hover:bg-white hover:text-boho-terracotta transition-colors"
+                            title={isPaused ? "Retomar (Espaço)" : "Pausar (Espaço)"}
+                        >
+                            {isPaused ? <Play size={16} /> : <Pause size={16} />}
+                        </button>
+
+                        <button
+                            onClick={() => {
+                                const levels: ('Off' | 'Calm' | 'Breezy')[] = ['Off', 'Calm', 'Breezy'];
+                                const next = levels[(levels.indexOf(windLevel) + 1) % levels.length];
+                                setWindLevel(next);
+                            }}
+                            className="p-2 rounded-xl text-boho-clay/60 hover:bg-white hover:text-boho-terracotta transition-colors flex gap-1 items-center"
+                            title={`Vento: ${windLevel} (W)`}
+                        >
+                            <Wind size={16} />
+                            <span className="text-[10px] font-bold">{windLevel}</span>
+                        </button>
+
+                        <button
+                            onClick={() => {
+                                const qualities = ['Low', 'Balanced', 'High'];
+                                const next = qualities[(qualities.indexOf(quality) + 1) % qualities.length];
+                                setQuality(next);
+                            }}
+                            className="p-2 rounded-xl text-boho-clay/60 hover:bg-white hover:text-boho-terracotta transition-colors flex gap-1 items-center"
+                            title={`Qualidade: ${quality} (Q)`}
+                        >
+                            <Monitor size={16} />
+                            <span className="text-[10px] font-bold">{quality === 'Low' ? 'LO' : quality === 'Balanced' ? 'MED' : 'HI'}</span>
+                        </button>
                     </div>
+
                     <div className="flex flex-col gap-4 mt-6 pt-6 border-t border-boho-clay/10">
-                        <label className="flex items-center justify-between cursor-pointer group">
+                        <label className="flex items-center justify-between cursor-pointer group opacity-80 hover:opacity-100 transition-opacity">
                             <span className="text-[10px] font-bold tracking-widest text-boho-clay/60 uppercase">Reduzir Movimento</span>
                             <div
                                 onClick={() => onReduceMotionChange(!reduceMotion)}
-                                className={`w-10 h-5 rounded-full p-1 transition-colors duration-300 ${reduceMotion ? 'bg-boho-sage' : 'bg-boho-clay/20'}`}
+                                className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-300 ${reduceMotion ? 'bg-boho-sage' : 'bg-boho-clay/20'}`}
                             >
-                                <div className={`w-3 h-3 bg-white rounded-full transition-transform duration-300 ${reduceMotion ? 'translate-x-5' : 'translate-x-0'}`} />
+                                <div className={`w-3 h-3 bg-white rounded-full transition-transform duration-300 ${reduceMotion ? 'translate-x-4' : 'translate-x-0'}`} />
                             </div>
                         </label>
+                        <div className="flex justify-between items-center opacity-60">
+                            <div className="flex items-center gap-1">
+                                <HelpCircle size={12} />
+                                <span className="text-[10px]">Atalhos: R, Space, Q, W, Esc</span>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>

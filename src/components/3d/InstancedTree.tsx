@@ -1,9 +1,10 @@
-import React, { useMemo, useRef, useLayoutEffect, useEffect } from 'react';
+import React, { useMemo, useRef, useLayoutEffect, useEffect, useState } from 'react';
 import * as THREE from 'three';
-import { useFrame, useLoader } from '@react-three/fiber';
+import { useFrame, useLoader, type ThreeEvent } from '@react-three/fiber';
 import { generateProceduralTree } from '../../utils/treeGenerator';
 import { soundManager } from '../../utils/SoundManager';
 import type { EmotionData } from '../../types';
+import { createRng } from '../../utils/random';
 
 interface InstancedTreeProps {
     emotions: EmotionData[];
@@ -12,36 +13,72 @@ interface InstancedTreeProps {
     onEmotionsUpdate?: (emotions: EmotionData[]) => void;
     reduceMotion: boolean;
     seed: number;
+    isCinematic: boolean;
+    windLevel: 'Off' | 'Calm' | 'Breezy';
+    isPaused: boolean;
 }
 
-// Fibonacci Sphere Distribution (Hemisphere)
-const getFibonacciPoints = (count: number, radius: number, yOffset: number) => {
+// Ellipsoid Distribution (Canopy)
+const getCanopyPoints = (count: number, radiusX: number, radiusY: number, yOffset: number) => {
     const points: THREE.Vector3[] = [];
-    const phi = Math.PI * (3 - Math.sqrt(5)); // Golden Angle
+    const minRadiusSq = 0.3 * 0.3; // Hollow center percentage squared
 
-    for (let i = 0; i < count; i++) {
-        // y goes from 1 (top) to 0 (equator) for hemisphere
-        const y = 1 - (i / (count - 1));  // 1 -> 0
-        const r = Math.sqrt(1 - y * y); // Radius at y
+    let attempts = 0;
+    while (points.length < count && attempts < count * 5) {
+        attempts++;
+        // Random point in unit sphere
+        const u = Math.random();
+        const v = Math.random();
+        const theta = 2 * Math.PI * u;
+        const phi = Math.acos(2 * v - 1);
 
-        const theta = phi * i;
+        const r = Math.cbrt(Math.random()); // Cube root for uniform distribution
 
-        const x = Math.cos(theta) * r * radius;
-        const z = Math.sin(theta) * r * radius;
-        const py = y * radius + yOffset; // Shift up
+        // Convert to Cartesian
+        const sinPhi = Math.sin(phi);
+        const xNormalized = r * sinPhi * Math.cos(theta);
+        const yNormalized = r * sinPhi * Math.sin(theta);
+        const zNormalized = r * Math.cos(phi);
 
-        points.push(new THREE.Vector3(x, py, z));
+        // Check bounds (Hollow shell: 0.4 to 1.0)
+        const distSq = xNormalized * xNormalized + yNormalized * yNormalized + zNormalized * zNormalized;
+
+        // We want a shell, mostly upper hemisphere?
+        // Let's force y to be mostly positive? yNormalized goes -1 to 1.
+        // Let's shift it up.
+
+        if (distSq < minRadiusSq) continue;
+
+        // Shape into ellipsoid
+        const x = xNormalized * radiusX;
+        const y = Math.abs(yNormalized) * radiusY + yOffset; // Abs(y) for upper dome, + offset
+        const z = zNormalized * radiusX;
+
+        points.push(new THREE.Vector3(x, y, z));
     }
     return points;
 };
 
-export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafClick, onLeafHover, onEmotionsUpdate, reduceMotion, seed }) => {
+export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafClick, onLeafHover, onEmotionsUpdate, reduceMotion, seed, isCinematic, windLevel, isPaused }) => {
     const leafMeshRef = useRef<THREE.InstancedMesh>(null);
     const branchMeshRef = useRef<THREE.InstancedMesh>(null);
     const haloRef = useRef<THREE.Mesh>(null);
     const [hoveredIndex, setHoveredIndex] = React.useState<number | null>(null);
     const [focusedIndex, setFocusedIndex] = React.useState<number>(0);
     const [leafMap] = useLoader(THREE.TextureLoader, ['/folha.png']);
+    const [cursorPointer, setCursorPointer] = useState(false);
+
+    // Track current scales for animation
+    const scalesRef = useRef<Float32Array | null>(null);
+
+    useEffect(() => {
+        document.body.style.cursor = cursorPointer ? 'pointer' : 'auto';
+        return () => {
+            document.body.style.cursor = 'auto';
+        };
+    }, [cursorPointer]);
+
+    const randomFor = useMemo(() => (offset: number) => createRng(Math.floor(seed * 9973 + offset)), [seed]);
 
     // --- CANVAS GENERATION (Branches) ---
     const { branches } = useMemo(() => {
@@ -60,57 +97,76 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
         });
     }, [branches]);
 
-    // --- LEAF DISTRIBUTION (DOME) ---
+    // --- LEAF DISTRIBUTION (Canopy) ---
     const { allTransforms, emotionIndices } = useMemo(() => {
         const NATIVE_COUNT = 1500;
-        const RADIUS = 16;
-        const HEIGHT_OFFSET = 20;
+        const RADIUS_X = 18;
+        const RADIUS_Y = 14;
+        const HEIGHT_OFFSET = 18;
 
-        // 1. Native Leaves (Filler) - Inner/Dense
-        const nativePoints = getFibonacciPoints(NATIVE_COUNT, RADIUS, HEIGHT_OFFSET);
+        const jitterRng = randomFor(1);
+
+        // 1. Native Leaves (Filler)
+        const nativePoints = getCanopyPoints(NATIVE_COUNT, RADIUS_X, RADIUS_Y, HEIGHT_OFFSET);
         const transforms: THREE.Matrix4[] = [];
 
         nativePoints.forEach(pos => {
-            // Add some jitter for organic look
-            pos.x += (Math.random() - 0.5);
-            pos.y += (Math.random() - 0.5) * 2;
-            pos.z += (Math.random() - 0.5);
+            // Slight noise
+            pos.x += (jitterRng() - 0.5) * 2;
+            pos.y += (jitterRng() - 0.5) * 2;
+            pos.z += (jitterRng() - 0.5) * 2;
 
             const dummy = new THREE.Object3D();
             dummy.position.copy(pos);
             // Random rotation
-            dummy.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
-            dummy.scale.set(0, 0, 0); // Start scale 0 (animated)
+            dummy.rotation.set(jitterRng() * Math.PI, jitterRng() * Math.PI, jitterRng() * Math.PI);
+
+            // Native Scale: 0.6 - 1.2
+            const s = 0.6 + jitterRng() * 0.6;
+            dummy.userData = { targetScale: s }; // Store target scale in userData hack directly on object? No, Matrix doesn't store userData.
+            // We'll recover target scale from index later or deterministic RNG? 
+            // Better: use the matrix scale to store TARGET scale, and animate from 0 separately?
+            // Actually, let's store Scale 1 in matrix, and apply multiplier in loop.
+            dummy.scale.set(1, 1, 1);
+
             dummy.updateMatrix();
             transforms.push(dummy.matrix);
         });
 
-        // 2. Emotion Leaves (Interactive) - Outer Layer
-        // We place them slightly OUTSIDE the native radius to ensure visibility
+        // 2. Emotion Leaves (Interactive)
         const eIndices = new Set<number>();
         const emotionTransforms: THREE.Matrix4[] = [];
-        const EMOTION_RADIUS = RADIUS + 1.5; // Poke out
+        const EMOTION_RADIUS_X = RADIUS_X + 2;
 
         emotions.forEach((emotion, i) => {
-            // Category defines height bias
             let heightBias = 0;
-            if (emotion.category === 'alegria' || emotion.category === 'amor') heightBias = 5;
-            if (emotion.category === 'medo' || emotion.category === 'raiva') heightBias = -5;
+            if (emotion.category === 'alegria' || emotion.category === 'amor') heightBias = 6;
+            if (emotion.category === 'medo' || emotion.category === 'tristeza') heightBias = -4;
 
-            const y = 1 - (i / (emotions.length + 1));
-            const r = Math.sqrt(1 - y * y);
-            const theta = Math.PI * (3 - Math.sqrt(5)) * i * 10;
+            // Simple distribution on surface
+            const theta = (i / emotions.length) * Math.PI * 2 * 3; //Wrap around 3 times
+            const yNorm = (i / emotions.length) * 2 - 1;
+            const phi = Math.acos(yNorm * 0.8); // 0.8 to compress vertically
 
-            const x = Math.cos(theta) * r * EMOTION_RADIUS;
-            const z = Math.sin(theta) * r * EMOTION_RADIUS;
-            const py = y * EMOTION_RADIUS + HEIGHT_OFFSET + heightBias;
+            const x = Math.sin(phi) * Math.cos(theta) * EMOTION_RADIUS_X;
+            const z = Math.sin(phi) * Math.sin(theta) * EMOTION_RADIUS_X;
+            const y = Math.cos(phi) * RADIUS_Y + HEIGHT_OFFSET + heightBias;
 
-            const pos = new THREE.Vector3(x, py, z);
+            const pos = new THREE.Vector3(x, y, z);
             const dummy = new THREE.Object3D();
             dummy.position.copy(pos);
+            dummy.lookAt(0, HEIGHT_OFFSET + 10, 0); // Look at centerish
 
-            dummy.rotation.set(Math.random() * Math.PI * 0.5, Math.atan2(x, z), 0);
-            dummy.scale.set(0, 0, 0);
+            // Emotion Scale: 1.4 - 1.8 linked to intensity
+            const intensity = emotion.intensity || 3;
+            const s = 1.4 + (intensity / 5) * 0.4;
+
+            // Store target scale in the matrix scale/elements for now? 
+            // We will stash it in a separate array or property? 
+            // Let's just put it in Scale X/Y/Z of the matrix. 
+            // In the loop, we will animate FROM current to target.
+            dummy.scale.set(s, s, s);
+
             dummy.updateMatrix();
 
             emotionTransforms.push(dummy.matrix);
@@ -118,49 +174,74 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
         });
 
         return { allTransforms: [...transforms, ...emotionTransforms], emotionIndices: eIndices };
-    }, [emotions, seed]);
+    }, [emotions, randomFor]);
 
 
-    // --- ANIMATION DELAYS ---
-    const delays = useMemo(() => new Float32Array(allTransforms.length).map(() => Math.random() * 2.0), [allTransforms]);
+    // --- ANIMATION DELAYS & SCALES INIT ---
+    const { delays, targetScales } = useMemo(() => {
+        const delayRng = randomFor(3);
+        const d = new Float32Array(allTransforms.length);
+        const t = new Float32Array(allTransforms.length);
+
+        const dummy = new THREE.Object3D();
+
+        allTransforms.forEach((m, i) => {
+            d[i] = delayRng() * 2.0;
+
+            // Extract scale from matrix to use as target
+            dummy.matrix.copy(m);
+            dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+            t[i] = dummy.scale.x; // Uniform scale assumed
+        });
+
+        return { delays: d, targetScales: t };
+    }, [allTransforms, randomFor]);
+
+    // Initialize/Reset ScalesRef
+    useEffect(() => {
+        scalesRef.current = new Float32Array(allTransforms.length).fill(0);
+    }, [allTransforms]);
+
 
     // --- SETUP COLORS ---
     useLayoutEffect(() => {
         if (leafMeshRef.current) {
             const updatedEmotions = [...emotions];
             let changed = false;
+            const colorRng = randomFor(4);
 
             allTransforms.forEach((mat, i) => {
-                leafMeshRef.current!.setMatrixAt(i, mat);
+                // Set matrix with Scale=0 initially (via animation loop) or here?
+                // The loop handles everything. But we need to set colors.
+                // We shouldn't touch matrix here if loop does it. 
+                // But loop needs base transforms without scale 0? 
+                // wait, loop uses allTransforms which HAS target scale. 
+                // loop sets scale.
 
                 if (emotionIndices.has(i)) {
-                    // Emotion: Vivid color from data
                     const idx = i - (allTransforms.length - emotions.length);
                     if (emotions[idx]) {
                         const c = new THREE.Color(emotions[idx].color).convertSRGBToLinear();
                         leafMeshRef.current!.setColorAt(i, c);
 
-                        // Capture Position for Camera Focus
+                        // Capture Position for Camera Focus (Decompose from BASE mat)
                         const pos = new THREE.Vector3();
                         const dummy = new THREE.Object3D();
-                        dummy.matrix.copy(mat);
+                        dummy.matrix.copy(mat); // This mat has Target Scale, but correct Pos/Rot
                         dummy.matrix.decompose(pos, dummy.quaternion, dummy.scale);
 
                         if (!updatedEmotions[idx].position ||
-                            updatedEmotions[idx].position![0] !== pos.x ||
-                            updatedEmotions[idx].position![1] !== pos.y ||
-                            updatedEmotions[idx].position![2] !== pos.z) {
+                            updatedEmotions[idx].position![0] !== pos.x) {
                             updatedEmotions[idx] = { ...updatedEmotions[idx], position: [pos.x, pos.y, pos.z] };
                             changed = true;
                         }
                     }
                 } else {
-                    // Native: Boho variations (Olive, Sage, Brown)
-                    const rnd = Math.random();
+                    const rnd = colorRng();
                     let c;
-                    if (rnd > 0.7) c = new THREE.Color('#8b5e3c'); // Dried Brown
-                    else if (rnd > 0.4) c = new THREE.Color('#87A986'); // Sage
-                    else c = new THREE.Color('#556b2f'); // Dark Olive
+                    if (rnd > 0.7) c = new THREE.Color('#8b5e3c');
+                    else if (rnd > 0.4) c = new THREE.Color('#87A986');
+                    else c = new THREE.Color('#556b2f');
 
                     leafMeshRef.current!.setColorAt(i, c.convertSRGBToLinear());
                 }
@@ -169,80 +250,90 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
             if (changed && onEmotionsUpdate) {
                 onEmotionsUpdate(updatedEmotions);
             }
-
-            leafMeshRef.current.instanceMatrix.needsUpdate = true;
             if (leafMeshRef.current.instanceColor) leafMeshRef.current.instanceColor.needsUpdate = true;
-
         }
-
-        if (branchMeshRef.current) {
-            branchTransforms.forEach((mat, i) => branchMeshRef.current!.setMatrixAt(i, mat));
-            branchMeshRef.current.instanceMatrix.needsUpdate = true;
-        }
-
-    }, [allTransforms, emotionIndices, emotions, branchTransforms]);
+    }, [allTransforms, emotionIndices, emotions, onEmotionsUpdate, randomFor]);
 
 
     // --- FRAME LOOP ---
-    const dummy = useMemo(() => new THREE.Object3D(), []);
-    const startTime = useRef(0);
-    useEffect(() => { startTime.current = Date.now(); }, [seed]);
+    const dummyRef = useRef(new THREE.Object3D());
+    const dummy = dummyRef.current;
 
-    useFrame((state) => {
-        if (!leafMeshRef.current) return;
+    useFrame((state, delta) => {
+        if (!leafMeshRef.current || !scalesRef.current) return;
+        if (isPaused) return;
 
-        // Update Shader Time
+        // Wind Config
+        let windSpeed = 0.5;
+        let windAmp = 0.005;
+        if (windLevel === 'Off') { windSpeed = 0; windAmp = 0; }
+        if (windLevel === 'Breezy') { windSpeed = 1.5; windAmp = 0.015; }
+        if (reduceMotion) { windSpeed *= 0.1; windAmp *= 0.5; }
+
         if (leafMeshRef.current.userData.shader) {
-            leafMeshRef.current.userData.shader.uniforms.uTime.value = reduceMotion ? 0 : state.clock.elapsedTime;
+            leafMeshRef.current.userData.shader.uniforms.uTime.value = state.clock.elapsedTime;
         }
 
-        const now = Date.now();
-        const elapsedTotal = (now - startTime.current) / 1000;
+        const elapsedTotal = state.clock.elapsedTime;
+        const time = elapsedTotal * windSpeed;
 
         let needsUpdate = false;
-        // Optimization: loop through 1500+ items is fine in JS
+
         for (let i = 0; i < allTransforms.length; i++) {
+            // Growth Animation
             if (elapsedTotal < delays[i]) continue;
 
-            leafMeshRef.current.getMatrixAt(i, dummy.matrix);
-            dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+            const target = targetScales[i];
+            const current = scalesRef.current[i];
 
-            const isEmotion = emotionIndices.has(i);
-            const rnd = (i % 10) / 10;
-            const baseNative = 1.0 + rnd * 0.5;
-
-            let targetScale = baseNative;
-            if (isEmotion) {
-                const idx = i - (allTransforms.length - emotions.length);
-                const intensity = emotions[idx]?.intensity || 3;
-                targetScale = 1.5 + (intensity * 0.4); // 1.9 to 3.5
-            }
-
-            const dist = targetScale - dummy.scale.x;
-            if (Math.abs(dist) > 0.01) {
-                dummy.scale.addScalar(dist * 0.05); // Smooth grow
+            let nextScale = current;
+            if (current < target) {
+                nextScale = Math.min(target, current + delta * 2.0); // Grow speed
+                scalesRef.current[i] = nextScale;
                 needsUpdate = true;
             }
 
-            // Simple Wind
-            const wind = Math.sin(state.clock.elapsedTime + dummy.position.x * 0.5) * 0.005;
-            dummy.rotation.z += wind;
-            dummy.rotation.x += wind * 0.5;
+            // Optimization: If grown and no wind, skip? 
+            if (!needsUpdate && windLevel === 'Off') continue;
+
+            // Physics Logic: Reconstruct from BASE (allTransforms[i])
+            dummy.matrix.copy(allTransforms[i]);
+            dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+
+            // Apply scale
+            dummy.scale.setScalar(nextScale);
+
+            // Apply Wind (Deterministic Sway)
+            // Phase based on position
+            const phase = dummy.position.x * 0.5 + dummy.position.z * 0.3;
+            // Noisy offset based on index
+            const noise = (i % 20) * 0.1;
+
+            const swayX = Math.sin(time + phase + noise) * windAmp;
+            const swayZ = Math.cos(time * 0.8 + phase) * windAmp; // Different freq
+
+            dummy.rotation.x += swayX;
+            dummy.rotation.z += swayZ;
 
             dummy.updateMatrix();
             leafMeshRef.current.setMatrixAt(i, dummy.matrix);
+            needsUpdate = true; // Always update if wind is on
         }
-        if (needsUpdate || true) leafMeshRef.current.instanceMatrix.needsUpdate = true;
 
-        // Update Halo
+        if (needsUpdate) leafMeshRef.current.instanceMatrix.needsUpdate = true;
+
+        // Halo Logic
         if (haloRef.current && (hoveredIndex !== null || focusedIndex !== null)) {
             const activeIdx = hoveredIndex !== null ? hoveredIndex : (allTransforms.length - emotions.length + focusedIndex);
+            // Ensure we get the latest animated state
             leafMeshRef.current.getMatrixAt(activeIdx, dummy.matrix);
             dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
 
             haloRef.current.position.copy(dummy.position);
             haloRef.current.quaternion.copy(dummy.quaternion);
-            haloRef.current.scale.copy(dummy.scale).multiplyScalar(1.2);
+            // Pulsing scale for halo?
+            const pulse = 1.2 + Math.sin(state.clock.elapsedTime * 4) * 0.05;
+            haloRef.current.scale.copy(dummy.scale).multiplyScalar(pulse);
             haloRef.current.updateMatrix();
         }
     });
@@ -268,11 +359,12 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, [emotions, focusedIndex, onLeafClick]);
 
-    const handlePointerMove = (e: any) => {
+    const handlePointerMove = (e: ThreeEvent<PointerEvent>) => {
+        if (isCinematic) return;
         e.stopPropagation();
         const id = e.instanceId!;
         if (emotionIndices.has(id)) {
-            document.body.style.cursor = 'pointer';
+            setCursorPointer(true);
             if (hoveredIndex !== id) {
                 setHoveredIndex(id);
                 // Trigger sound only on new hover
@@ -286,7 +378,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
     };
 
     const handlePointerOut = () => {
-        document.body.style.cursor = 'auto';
+        setCursorPointer(false);
         setHoveredIndex(null);
         onLeafHover(null, 0, 0);
     };
@@ -311,6 +403,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
                 onPointerMove={handlePointerMove}
                 onPointerOut={handlePointerOut}
                 onClick={(e) => {
+                    if (isCinematic) return;
                     e.stopPropagation();
                     const id = e.instanceId!;
                     if (emotionIndices.has(id)) {

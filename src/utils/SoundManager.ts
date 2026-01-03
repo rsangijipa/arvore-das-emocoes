@@ -12,7 +12,8 @@ class SoundManager {
 
     private init() {
         if (typeof window !== 'undefined') {
-            const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+            const maybeWindow = window as typeof window & { webkitAudioContext?: typeof AudioContext };
+            const AudioContextClass = window.AudioContext || maybeWindow.webkitAudioContext;
             if (AudioContextClass) {
                 this.ctx = new AudioContextClass();
                 this.masterGain = this.ctx.createGain();

@@ -1,8 +1,11 @@
 import { useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import type { EmotionData } from '../types';
+import { createRng } from '../utils/random';
 
-const RAW_EMOTIONS = [
+type SeedEmotion = Pick<EmotionData, 'text' | 'color' | 'category' | 'subcategory' | 'intensity' | 'tags'>;
+
+const RAW_EMOTIONS: SeedEmotion[] = [
     { text: "Gratidão", color: "#F4A460", category: 'alegria', subcategory: 'reconhecimento', intensity: 4, tags: ['paz', 'conectividade'] },
     { text: "Ansiedade", color: "#8B4513", category: 'medo', subcategory: 'antecipação', intensity: 5, tags: ['alerta', 'tensão'] },
     { text: "Alegria", color: "#FFD700", category: 'alegria', subcategory: 'entusiasmo', intensity: 5, tags: ['brilho', 'energia'] },
@@ -15,18 +18,22 @@ const RAW_EMOTIONS = [
 
 export const useEmotionData = (count: number = 50) => {
     const emotions = useMemo<EmotionData[]>(() => {
+        const rng = createRng(1337 + count);
+        const baseTimestamp = new Date('2024-01-01T00:00:00Z').getTime();
+
         return Array.from({ length: count }).map((_, i) => {
             const base = RAW_EMOTIONS[i % RAW_EMOTIONS.length];
+            const drift = Math.floor(rng() * 1000000000);
             return {
                 id: uuidv4(),
                 text: base.text,
                 reflection: "Reflexão sobre " + base.text + "...",
                 color: base.color,
-                category: base.category as any,
+                category: base.category,
                 subcategory: base.subcategory,
                 intensity: base.intensity,
                 tags: base.tags,
-                timestamp: Date.now() - Math.random() * 1000000000,
+                timestamp: baseTimestamp - drift,
             };
         });
     }, [count]);
