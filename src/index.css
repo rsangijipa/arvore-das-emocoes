@@ -1,8 +1,28 @@
-@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600&family=Playfair+Display:ital,wght@0,400;0,600;0,700;1,400&display=swap');
+@import "tailwindcss";
 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+:root {
+  --bg0: #22190c;
+  --bg1: #615225;
+  --gold0: #cea86c;
+  --gold1: #e9ce98;
+  --leafGreen: #1faa47;
+  --leafRed: #af1a34;
+  --leafBlue: #1c44a9;
+  --leafGold: #b59922;
+}
+
+@theme {
+  --color-boho-bg: #F9F7F2;
+  --color-boho-paper: #EBE5CE;
+  --color-boho-terracotta: #C67D63;
+  --color-boho-sage: #87A986;
+  --color-boho-clay: #A06C50;
+  --color-boho-dark: #3E3228;
+  --color-boho-text: #5D4E44;
+
+  --font-serif: "Playfair Display", serif;
+  --font-sans: "Montserrat", sans-serif;
+}
 
 html,
 body,
@@ -12,9 +32,45 @@ body,
   margin: 0;
   padding: 0;
   overflow: hidden;
-  background-color: #F9F7F2;
+  background-color: var(--bg0);
   font-family: 'Montserrat', sans-serif;
-  color: #3E3228;
+  color: var(--gold1);
+}
+
+@layer utilities {
+  .glass-card {
+    background-color: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+  }
+
+  .glass-button {
+    background-color: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    transition: all 0.3s transition-timing-function(ease-in-out);
+  }
+
+  .text-glow {
+    text-shadow: 0 0 10px rgba(233, 206, 152, 0.5);
+  }
+
+  @keyframes float {
+
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+
+    50% {
+      transform: translateY(-10px);
+    }
+  }
+
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
 }
 
 /* Scrollbar Hide */

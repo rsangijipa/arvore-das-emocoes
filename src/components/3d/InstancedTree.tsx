@@ -19,92 +19,63 @@ interface InstancedTreeProps {
     isPaused: boolean;
 }
 
-// Ellipsoid Distribution (Canopy) - Deterministic RNG Version
-const getCanopyPoints = (count: number, radiusX: number, radiusY: number, yOffset: number, rng: () => number) => {
-    const points: THREE.Vector3[] = [];
-    const minRadiusSq = 0.3 * 0.3; // Hollow center percentage squared
-
-    let attempts = 0;
-    while (points.length < count && attempts < count * 5) {
-        attempts++;
-        // Random point in unit sphere
-        const u = rng();
-        const v = rng();
-        const theta = 2 * Math.PI * u;
-        const phi = Math.acos(2 * v - 1);
-
-        const r = Math.cbrt(rng()); // Cube root for uniform distribution
-
-        // Convert to Cartesian
-        const sinPhi = Math.sin(phi);
-        const xNormalized = r * sinPhi * Math.cos(theta);
-        const yNormalized = r * sinPhi * Math.sin(theta);
-        const zNormalized = r * Math.cos(phi);
-
-        // Check bounds (Hollow shell: 0.4 to 1.0)
-        const distSq = xNormalized * xNormalized + yNormalized * yNormalized + zNormalized * zNormalized;
-
-        if (distSq < minRadiusSq) continue;
-
-        // Shape into ellipsoid
-        const x = xNormalized * radiusX;
-        const y = Math.abs(yNormalized) * radiusY + yOffset; // Abs(y) for upper dome, + offset
-        const z = zNormalized * radiusX;
-
-        points.push(new THREE.Vector3(x, y, z));
-    }
-    return points;
-};
-
 export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafClick, onLeafHover, reduceMotion, seed, isCinematic, windLevel, isPaused }) => {
     // Refs
     const canopyMeshRef = useRef<THREE.InstancedMesh>(null);
-    const emotionMeshRef = useRef<THREE.InstancedMesh>(null);
     const branchMeshRef = useRef<THREE.InstancedMesh>(null);
+    const emotionMeshRefs = useRef<(THREE.InstancedMesh | null)[]>([]);
     const haloRef = useRef<THREE.Mesh>(null);
 
     // State
     const [hoveredEmotionIndex, setHoveredEmotionIndex] = useState<number | null>(null);
-    const [focusedIndex] = useState<number>(0);
     const [cursorPointer, setCursorPointer] = useState(false);
+    const [stage, setStage] = useState(0);
+
+    // Sequence
+    useEffect(() => {
+        const t1 = setTimeout(() => setStage(1), 100);
+        const t2 = setTimeout(() => setStage(2), 600);
+        const t3 = setTimeout(() => setStage(3), 1600);
+        return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+    }, []);
 
     // Assets
-    const [leafMap] = useLoader(THREE.TextureLoader, ['/folha.png']);
+    const textureUrls = useMemo(() => [
+        '/textures/leaves/leaf_tex_01.png',
+        '/textures/leaves/leaf_tex_02.png',
+        '/textures/leaves/leaf_tex_03.png',
+        '/textures/leaves/leaf_tex_04.png',
+        '/textures/leaves/leaf_tex_05.png'
+    ], []);
+
+    const leafMaps = useLoader(THREE.TextureLoader, ['/folha.png', ...textureUrls]);
+    const canopyMap = leafMaps[0];
+    const emotionMaps = leafMaps.slice(1);
+
     const { scene: glbScene } = useGLTF("/folha.glb");
 
-    // Extract geometry from GLB
     const glbGeometry = useMemo(() => {
         let geom: THREE.BufferGeometry | null = null;
         glbScene.traverse((obj) => {
             if ((obj as THREE.Mesh).isMesh && !geom) {
                 geom = (obj as THREE.Mesh).geometry.clone();
-                // Apply same centering logic as HeroLeaf if needed? 
-                // HeroLeaf centers geometry. We should probably center it here too or pre-transform.
-                // Let's simple center it.
                 geom.center();
-                // Scale it down? HeroLeaf scales it 2.0 / maxDim.
-                // We'll apply scale in instance matrix.
             }
         });
-        return geom || new THREE.PlaneGeometry(1, 1); // Fallback
+        return geom || new THREE.PlaneGeometry(1, 1);
     }, [glbScene]);
 
-    // Track current scales for animation
     const scalesRef = useRef<Float32Array | null>(null);
+    const branchScalesRef = useRef<Float32Array | null>(null);
 
     useEffect(() => {
         document.body.style.cursor = cursorPointer ? 'pointer' : 'auto';
-        return () => {
-            document.body.style.cursor = 'auto';
-        };
+        return () => { document.body.style.cursor = 'auto'; };
     }, [cursorPointer]);
 
-    const randomFor = useMemo(() => (offset: number) => createRng(Math.floor(seed * 9973 + offset)), [seed]);
-
-    // --- CANVAS GENERATION (Branches) ---
-    const { branches } = useMemo(() => {
-        return generateProceduralTree(seed);
-    }, [seed]);
+    // --- GEOMETRY GENERATION ---
+    const { branches, leafAnchors } = useMemo(() => generateProceduralTree(seed), [seed]);
+    const totalAnchors = leafAnchors.length;
 
     const branchTransforms = useMemo(() => {
         return branches.map(b => {
@@ -118,424 +89,382 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
         });
     }, [branches]);
 
-    // Fix Bug #1: Apply Branch Transforms
+    // Apply Branches
     useLayoutEffect(() => {
+        const dummy = new THREE.Object3D();
         if (branchMeshRef.current) {
-            branchTransforms.forEach((mat, i) => {
-                branchMeshRef.current!.setMatrixAt(i, mat);
+            branchScalesRef.current = new Float32Array(branches.length).fill(0);
+            branches.forEach((_, i) => {
+                branchMeshRef.current!.getMatrixAt(i, dummy.matrix);
+                dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+                dummy.scale.set(0, 0, 0);
+                dummy.updateMatrix();
+                branchMeshRef.current!.setMatrixAt(i, dummy.matrix);
             });
             branchMeshRef.current.instanceMatrix.needsUpdate = true;
         }
-    }, [branchTransforms]);
+    }, [branches, branchTransforms]);
 
-    // --- LOD ARCHITECTURE: POINTS GENERATION ---
-    const { canopyTransforms, emotionTransforms } = useMemo(() => {
-        const NATIVE_COUNT = 1500;
-        const RADIUS_X = 18;
-        const RADIUS_Y = 14;
-        const HEIGHT_OFFSET = 18;
+    // --- LEAF DISTRIBUTION & TEXTURE GROUPING ---
+    const { canopyTransforms, emotionGroups, instanceLookup } = useMemo(() => {
+        const rng = createRng(seed);
 
-        const distRng = randomFor(2);
-        const jitterRng = randomFor(1);
+        // Shuffle anchor indices
+        const indices = Array.from({ length: totalAnchors }, (_, i) => i);
+        for (let i = indices.length - 1; i > 0; i--) {
+            const j = Math.floor(rng() * (i + 1));
+            [indices[i], indices[j]] = [indices[j], indices[i]];
+        }
 
-        // 1. Generate ALL potential points (Base Canopy Cloud)
-        // We generate enough points for Canopy + sufficient spacing for Emotions if we replaced them.
-        // But the requirement is: "Emotion Leaves positions must be a SUBSET of canopyPoints".
-        // So we generate NATIVE_COUNT points.
-        const allPoints = getCanopyPoints(NATIVE_COUNT, RADIUS_X, RADIUS_Y, HEIGHT_OFFSET, distRng);
-
-        // 2. Select Emotion Indices (Distribution logic)
-        // We pick N indices to be emotions.
-        const eTransforms: THREE.Matrix4[] = [];
+        const emotionCount = Math.min(emotions.length, totalAnchors);
         const cTransforms: THREE.Matrix4[] = [];
+        const eGroups: { transforms: THREE.Matrix4[], originalIndices: number[] }[] = Array.from({ length: 5 }, () => ({ transforms: [], originalIndices: [] }));
 
-        // Distribute emotions
-        // Distribute emotions
-        // Shuffle available indices deterministically?
-        // Or pick them by algorithm (distribution). User suggested: "N positions... Distribute by height/angle."
-        // Let's walk through emotions and search for closest available canopy point matching a target region?
-        // That's expensive. 
-        // Simpler: Deterministic shuffle of available indices, pick top K? No, that's random distribution.
-        // User wants "Balanced in the canopy".
-
-        // Let's use the 'theta/phi' strategy from before to find IDEAL positions, 
-        // then snap to nearest canopy point? Or just overwrite the canopy point?
-        // "Position... Subset of canopyPoints".
-        // Let's Snap to nearest.
-
-        // A) Create map of points and usage
-        const usedPointIndices = new Set<number>();
-
-        emotions.forEach((emotion, i) => {
-            // Ideal Params
-            let heightBias = 0;
-            if (emotion.category === 'alegria' || emotion.category === 'amor') heightBias = 6;
-            if (emotion.category === 'medo' || emotion.category === 'tristeza') heightBias = -4;
-
-            const theta = (i / emotions.length) * Math.PI * 2 * 3;
-            const yNorm = (i / emotions.length) * 2 - 1;
-            const phi = Math.acos(yNorm * 0.8);
-
-            // Ideal Position
-            const ix = Math.sin(phi) * Math.cos(theta) * (RADIUS_X + 2); // Slightly outer? No "floating ring". Match Canopy.
-            // Let's match Canopy Radius precisely.
-            const iy = Math.cos(phi) * RADIUS_Y + HEIGHT_OFFSET + heightBias;
-            const iz = Math.sin(phi) * Math.sin(theta) * RADIUS_X;
-            const idealPos = new THREE.Vector3(ix, iy, iz);
-
-            // Find closest available canopy point
-            let closestIdx = -1;
-            let minDst = Infinity;
-
-            // Optimization: Just check a random subset of 50 points to find a "good enough" one 
-            // to avoid O(N*M) loop. Or just loop all if N=1500, M=100. 150,000 ops is fine.
-            for (let j = 0; j < allPoints.length; j++) {
-                if (usedPointIndices.has(j)) continue;
-                // Simple distance check
-                const d = allPoints[j].distanceToSquared(idealPos);
-                if (d < minDst) {
-                    minDst = d;
-                    closestIdx = j;
-                }
-            }
-
-            if (closestIdx !== -1) {
-                usedPointIndices.add(closestIdx);
-                const pos = allPoints[closestIdx];
-
-                const dummy = new THREE.Object3D();
-                dummy.position.copy(pos);
-                dummy.lookAt(0, HEIGHT_OFFSET + 10, 0); // Emotions look at center-ish? Or Look Out?
-                // Usually Look Out is better for leaves.
-                dummy.lookAt(pos.x * 2, pos.y, pos.z * 2);
-
-                // Scale Logic
-                const intensity = emotion.intensity || 3;
-                const s = 1.4 + (intensity / 5) * 0.4;
-                // GLB might be huge or tiny, let's normalize scale. 
-                // We'll assume scale '1' is roughly 1 unit sized leaf.
-                // We put the target scale in the matrix.
-                dummy.scale.set(s, s, s);
-                dummy.updateMatrix();
-
-                eTransforms.push(dummy.matrix);
-
-                // Update the original emotion object with strict position for camera
-                emotion.position = [pos.x, pos.y, pos.z];
-            }
-        });
-
-        // 3. Build Canopy Transforms (The rest)
-        allPoints.forEach((pos, idx) => {
-            if (usedPointIndices.has(idx)) return;
-
-            // Jitter
-            pos.x += (jitterRng() - 0.5) * 2;
-            pos.y += (jitterRng() - 0.5) * 2;
-            pos.z += (jitterRng() - 0.5) * 2;
-
-            const dummy = new THREE.Object3D();
-            dummy.position.copy(pos);
-            dummy.rotation.set(jitterRng() * Math.PI, jitterRng() * Math.PI, jitterRng() * Math.PI);
-
-            const s = 0.6 + jitterRng() * 0.6;
-            dummy.scale.set(s, s, s);
-            dummy.updateMatrix();
-            cTransforms.push(dummy.matrix);
-        });
-
-        return { canopyTransforms: cTransforms, emotionTransforms: eTransforms };
-    }, [emotions, randomFor, glbGeometry]); // Re-run if geometry changes? No.
-
-
-    // --- ANIMATION DELAYS & SCALES INIT ---
-    // Combine for animation loop: [ ...canopy, ...emotions ]
-    // We need to map back to refs properly.
-    const combinedCount = canopyTransforms.length + emotionTransforms.length;
-
-    const { delays, targetScales } = useMemo(() => {
-        const delayRng = randomFor(3);
-        const d = new Float32Array(combinedCount);
-        const t = new Float32Array(combinedCount);
-        const dummy = new THREE.Object3D();
-
-        const process = (transforms: THREE.Matrix4[], offset: number) => {
-            transforms.forEach((m, i) => {
-                const idx = offset + i;
-                d[idx] = delayRng() * 2.0;
-                dummy.matrix.copy(m);
-                dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-                t[idx] = dummy.scale.x;
-            });
+        // Helper to extract index from "/leaf_texture_N.png"
+        const getTexIdx = (url?: string) => {
+            if (!url) return 0;
+            const match = url.match(/_(\d)\.png/);
+            return match ? (parseInt(match[1]) - 1) : 0;
         };
 
-        process(canopyTransforms, 0);
-        process(emotionTransforms, canopyTransforms.length);
+        const dummy = new THREE.Object3D();
+        const jitterRng = createRng(seed * 2);
 
+        // Process all anchors
+        for (let i = 0; i < totalAnchors; i++) {
+            const anchorIdx = indices[i];
+            const anchorMat = leafAnchors[anchorIdx];
+
+            dummy.matrix.copy(anchorMat);
+            dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+
+            // Jitter
+            dummy.position.x += (jitterRng() - 0.5) * 1.5;
+            dummy.position.y += (jitterRng() - 0.5) * 1.5;
+            dummy.position.z += (jitterRng() - 0.5) * 1.5;
+
+            const rotJitter = new THREE.Euler(
+                jitterRng() * Math.PI,
+                jitterRng() * Math.PI,
+                jitterRng() * Math.PI
+            );
+            dummy.quaternion.multiply(new THREE.Quaternion().setFromEuler(rotJitter));
+            dummy.updateMatrix();
+
+            if (i < emotionCount) {
+                // It's an Emotion
+                // Assign ordered emotions to random anchors
+                const emotionIdx = i;
+                const texGroupIdx = getTexIdx(emotions[emotionIdx]?.textureUrl);
+
+                // Add to specific texture group
+                if (eGroups[texGroupIdx]) {
+                    eGroups[texGroupIdx].transforms.push(dummy.matrix.clone());
+                    eGroups[texGroupIdx].originalIndices.push(emotionIdx);
+                }
+            } else {
+                // It's Canopy
+                cTransforms.push(dummy.matrix.clone());
+            }
+        }
+
+        // Build flat map for lookup: [texGroupIdx][instanceId] -> originalEmotionIndex
+        const lookup = eGroups.map(g => g.originalIndices);
+
+        return { canopyTransforms: cTransforms, emotionGroups: eGroups, instanceLookup: lookup };
+    }, [leafAnchors, seed, emotions, totalAnchors]);
+
+    const activeEmotionCount = Math.min(emotions.length, totalAnchors);
+    const combinedCount = canopyTransforms.length + activeEmotionCount;
+
+    const { delays, targetScales } = useMemo(() => {
+        const dRng = createRng(seed + 100);
+        const sRng = createRng(seed + 200);
+        const d = new Float32Array(combinedCount);
+        const t = new Float32Array(combinedCount);
+
+        // Canopy
+        for (let i = 0; i < canopyTransforms.length; i++) {
+            d[i] = dRng() * 2.0;
+            t[i] = 0.7 + sRng() * 0.5;
+        }
+
+        // Emotions (Order matches 'emotions' array logic: Indices = offset + emotionIdx)
+        const offset = canopyTransforms.length;
+        for (let i = 0; i < activeEmotionCount; i++) {
+            const idx = offset + i;
+            d[idx] = dRng() * 2.0;
+            const em = emotions[i];
+            const intensity = em?.intensity || 3;
+            t[idx] = 1.3 + (intensity / 5) * 0.5;
+        }
         return { delays: d, targetScales: t };
-    }, [canopyTransforms, emotionTransforms, combinedCount, randomFor]);
+    }, [canopyTransforms.length, activeEmotionCount, combinedCount, seed, emotions]);
 
-    // Initialize/Reset ScalesRef
     useEffect(() => {
-        scalesRef.current = new Float32Array(combinedCount).fill(0);
+        scalesRef.current = new Float32Array(combinedCount).fill(0.0001);
     }, [combinedCount]);
 
-
-    // --- INIT MATRICES (Fix Bug #2) & COLORS ---
+    // Initial Layout - Set Colors/Matrices
     useLayoutEffect(() => {
-        // Init Canopy
+        const dummy = new THREE.Object3D();
+
+        // Canopy
         if (canopyMeshRef.current) {
-            const dummy = new THREE.Object3D();
             canopyTransforms.forEach((mat, i) => {
                 dummy.matrix.copy(mat);
                 dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-                dummy.scale.set(0, 0, 0);
+                dummy.scale.setScalar(0.0001);
                 dummy.updateMatrix();
                 canopyMeshRef.current!.setMatrixAt(i, dummy.matrix);
-                // Tint for canopy?
-                // Let's give slight variation
-                // const c = new THREE.Color('#556b2f').lerp(new THREE.Color('#87A986'), Math.random());
-                // canopyMeshRef.current!.setColorAt(i, c); 
-                // InstancedMesh default color is white if not set. We can use tint in material or set colors.
+
+                const cRng = createRng(seed * 7 + i);
+                const color = new THREE.Color('#2d5a27');
+                color.offsetHSL((cRng() - 0.5) * 0.1, (cRng() - 0.5) * 0.15, (cRng() - 0.5) * 0.1);
+                canopyMeshRef.current!.setColorAt(i, color.convertSRGBToLinear());
             });
             canopyMeshRef.current.instanceMatrix.needsUpdate = true;
+            if (canopyMeshRef.current.instanceColor) canopyMeshRef.current.instanceColor.needsUpdate = true;
         }
 
-        // Init Emotions
-        if (emotionMeshRef.current) {
-            const dummy = new THREE.Object3D();
-            emotionTransforms.forEach((mat, i) => {
-                dummy.matrix.copy(mat);
-                dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-                dummy.scale.set(0, 0, 0);
-                dummy.updateMatrix();
-                emotionMeshRef.current!.setMatrixAt(i, dummy.matrix);
+        // Emotions (Groups)
+        emotionGroups.forEach((group, gIdx) => {
+            const mesh = emotionMeshRefs.current[gIdx];
+            if (mesh) {
+                group.transforms.forEach((mat, i) => {
+                    dummy.matrix.copy(mat);
+                    dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+                    dummy.scale.setScalar(0.0001);
+                    dummy.updateMatrix();
+                    mesh.setMatrixAt(i, dummy.matrix);
 
-                // Set Color from Emotion Data
-                const em = emotions[i]; // emotionTransforms aligned with emotions array order (mostly)? 
-                // Wait. We pushed eTransforms in loop over `emotions`.
-                // So index `i` in eTransforms corresponds to `emotions[i]` IF we didn't skip any.
-                // We only skip if no point found? Unlikely for 1500 points.
-                // We should be safe assuming 1:1 if we were careful.
-                if (em) {
-                    const c = new THREE.Color(em.color).convertSRGBToLinear();
-                    emotionMeshRef.current!.setColorAt(i, c);
-                }
-            });
-            emotionMeshRef.current.instanceMatrix.needsUpdate = true;
-            if (emotionMeshRef.current.instanceColor) emotionMeshRef.current.instanceColor.needsUpdate = true;
-        }
+                    const originalIdx = instanceLookup[gIdx][i];
+                    const em = emotions[originalIdx];
+                    if (em) {
+                        const c = new THREE.Color(em.color).convertSRGBToLinear().multiplyScalar(1.2);
+                        mesh.setColorAt(i, c);
+                    }
+                });
+                mesh.instanceMatrix.needsUpdate = true;
+                if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+            }
+        });
 
-    }, [canopyTransforms, emotionTransforms, emotions]); // Dependencies
-
-
-    // --- FRAME LOOP ---
-    const dummyRef = useRef(new THREE.Object3D());
-    const dummy = dummyRef.current;
+    }, [canopyTransforms, emotionGroups, emotions, seed, instanceLookup]);
 
     useFrame((state, delta) => {
-        if (!scalesRef.current) return;
-        if (isPaused) return;
+        if (!scalesRef.current || isPaused) return;
+        const time = state.clock.elapsedTime;
+        const dummy = new THREE.Object3D();
+
+        let needsUpdateBranch = false;
+        let needsUpdateCanopy = false;
+        const needsUpdateGroups = [false, false, false, false, false];
+
+        // 1. Grow Branches (Slower)
+        if (stage >= 1 && branchMeshRef.current && branchScalesRef.current) {
+            const startDelay = 0.5;
+
+            for (let i = 0; i < branches.length; i++) {
+                const b = branches[i];
+                const activationTime = startDelay + (b.order * 0.35);
+
+                if (time < activationTime) continue;
+
+                const currentScaleY = branchScalesRef.current[i];
+                if (currentScaleY < 1.0) {
+                    // Slower growth speed
+                    const newScale = Math.min(1.0, currentScaleY + delta * 1.5);
+                    branchScalesRef.current[i] = newScale;
+                    needsUpdateBranch = true;
+
+                    const targetMat = branchTransforms[i];
+                    dummy.matrix.copy(targetMat);
+                    dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+
+                    const easout = 1 - Math.pow(1 - newScale, 3);
+                    dummy.scale.multiplyScalar(easout);
+
+                    dummy.updateMatrix();
+                    branchMeshRef.current.setMatrixAt(i, dummy.matrix);
+                }
+            }
+        }
 
         // Wind
-        let windSpeed = 0.5;
-        let windAmp = 0.005;
+        let windSpeed = 0.6;
+        let windAmp = 0.008;
         if (windLevel === 'Off') { windSpeed = 0; windAmp = 0; }
-        if (windLevel === 'Breezy') { windSpeed = 1.5; windAmp = 0.015; }
-        if (reduceMotion) { windSpeed *= 0.1; windAmp *= 0.5; }
+        if (windLevel === 'Breezy') { windSpeed = 1.4; windAmp = 0.015; }
+        if (reduceMotion) { windSpeed *= 0.1; windAmp *= 0.4; }
 
-        if (canopyMeshRef.current?.userData.shader) canopyMeshRef.current.userData.shader.uniforms.uTime.value = state.clock.elapsedTime;
-        // Emotion mesh material is Physical, standard shader uniforms might not apply unless we hook it. 
-        // But we do vertex displacement manually below anyway.
+        // 2. Canopy
+        if (stage >= 2) {
+            for (let i = 0; i < canopyTransforms.length; i++) {
+                if (time < delays[i] + 4.0) continue;
+                const target = targetScales[i];
+                const current = scalesRef.current[i];
+                let scale = current;
+                if (current < target) {
+                    scale = Math.min(target, current + delta * 1.5);
+                    scalesRef.current[i] = scale;
+                    needsUpdateCanopy = true;
+                }
 
-        const elapsedTotal = state.clock.elapsedTime;
-        const time = elapsedTotal * windSpeed;
-
-        let needsUpdateCanopy = false;
-        let needsUpdateEmotion = false;
-
-        // Loop Canopy
-        for (let i = 0; i < canopyTransforms.length; i++) {
-            const idx = i; // Global index 0..N
-            if (elapsedTotal < delays[idx]) continue;
-
-            // Growth
-            const target = targetScales[idx];
-            const current = scalesRef.current[idx];
-            let nextScale = current;
-            if (current < target) {
-                nextScale = Math.min(target, current + delta * 2.0);
-                scalesRef.current[idx] = nextScale;
-                needsUpdateCanopy = true;
-            }
-
-            if (!needsUpdateCanopy && windLevel === 'Off') continue;
-
-            dummy.matrix.copy(canopyTransforms[i]);
-            dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-            dummy.scale.setScalar(nextScale);
-
-            // Sway
-            const phase = dummy.position.x * 0.5 + dummy.position.z * 0.3;
-            // Lower amplitude for canopy (Layer A)
-            const swayX = Math.sin(time + phase + i * 0.1) * windAmp * 0.8;
-            const swayZ = Math.cos(time * 0.8 + phase) * windAmp * 0.8;
-
-            dummy.rotation.x += swayX;
-            dummy.rotation.z += swayZ;
-            dummy.updateMatrix();
-
-            canopyMeshRef.current?.setMatrixAt(i, dummy.matrix);
-            needsUpdateCanopy = true;
-        }
-
-        // Loop Emotions
-        for (let i = 0; i < emotionTransforms.length; i++) {
-            const idx = canopyTransforms.length + i; // Offset index
-            if (elapsedTotal < delays[idx]) continue;
-
-            // Growth
-            const target = targetScales[idx];
-            const current = scalesRef.current[idx];
-            let nextScale = current;
-            if (current < target) {
-                nextScale = Math.min(target, current + delta * 2.0);
-                scalesRef.current[idx] = nextScale;
-                needsUpdateEmotion = true;
-            }
-
-            if (!needsUpdateEmotion && windLevel === 'Off') continue;
-
-            dummy.matrix.copy(emotionTransforms[i]);
-            dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-            dummy.scale.setScalar(nextScale);
-
-            // Sway (Premium behavior? Maybe same for now)
-            const phase = dummy.position.x * 0.5 + dummy.position.z * 0.3;
-            const swayX = Math.sin(time + phase + i * 0.1) * windAmp;
-            const swayZ = Math.cos(time * 0.8 + phase) * windAmp;
-
-            dummy.rotation.x += swayX;
-            dummy.rotation.z += swayZ;
-            dummy.updateMatrix();
-
-            emotionMeshRef.current?.setMatrixAt(i, dummy.matrix);
-            needsUpdateEmotion = true;
-        }
-
-        if (needsUpdateCanopy && canopyMeshRef.current) canopyMeshRef.current.instanceMatrix.needsUpdate = true;
-        if (needsUpdateEmotion && emotionMeshRef.current) emotionMeshRef.current.instanceMatrix.needsUpdate = true;
-
-        // Halo Logic (Only for emotions?)
-        if (haloRef.current && (hoveredEmotionIndex !== null || focusedIndex !== null)) {
-            const activeLocalIdx = hoveredEmotionIndex !== null ? hoveredEmotionIndex : focusedIndex;
-            // This index is LOCAL to emotionTransforms/emotions array
-
-            if (emotionMeshRef.current && activeLocalIdx < emotionTransforms.length) {
-                emotionMeshRef.current.getMatrixAt(activeLocalIdx, dummy.matrix);
+                dummy.matrix.copy(canopyTransforms[i]);
                 dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-                haloRef.current.position.copy(dummy.position);
-                haloRef.current.quaternion.copy(dummy.quaternion);
+                dummy.scale.setScalar(scale);
 
-                const pulse = 1.2 + Math.sin(state.clock.elapsedTime * 4) * 0.05;
-                haloRef.current.scale.copy(dummy.scale).multiplyScalar(pulse);
-                haloRef.current.updateMatrix();
+                const phase = dummy.position.x * 0.4 + dummy.position.z * 0.2 + i * 0.1;
+                dummy.rotation.x += Math.sin(time * windSpeed + phase) * windAmp;
+                dummy.rotation.z += Math.cos(time * windSpeed * 0.8 + phase) * windAmp;
+
+                dummy.updateMatrix();
+                canopyMeshRef.current?.setMatrixAt(i, dummy.matrix);
+            }
+        }
+
+        // 3. Emotions (Groups)
+        if (stage >= 3) {
+            const offset = canopyTransforms.length;
+            emotionGroups.forEach((group, gIdx) => {
+                const mesh = emotionMeshRefs.current[gIdx];
+                if (!mesh) return;
+
+                group.transforms.forEach((mat, i) => {
+                    const originalIdx = instanceLookup[gIdx][i];
+                    const scaleIdx = offset + originalIdx;
+
+                    if (time < delays[scaleIdx] + 4.5) return;
+
+                    const target = targetScales[scaleIdx];
+                    const current = scalesRef.current![scaleIdx];
+                    let scale = current;
+
+                    if (current < target) {
+                        scale = Math.min(target, current + delta * 1.5);
+                        scalesRef.current![scaleIdx] = scale;
+                        needsUpdateGroups[gIdx] = true;
+                    }
+
+                    dummy.matrix.copy(mat);
+                    dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+                    dummy.scale.setScalar(scale);
+
+                    const phase = dummy.position.x * 0.4 + dummy.position.z * 0.2 + originalIdx * 0.1;
+                    dummy.rotation.x += Math.sin(time * windSpeed + phase) * windAmp * 1.2;
+                    dummy.rotation.z += Math.cos(time * windSpeed * 0.8 + phase) * windAmp * 1.2;
+
+                    dummy.updateMatrix();
+                    mesh.setMatrixAt(i, dummy.matrix);
+                });
+            });
+        }
+
+        if (needsUpdateBranch && branchMeshRef.current) branchMeshRef.current.instanceMatrix.needsUpdate = true;
+        if (needsUpdateCanopy && canopyMeshRef.current) canopyMeshRef.current.instanceMatrix.needsUpdate = true;
+
+        needsUpdateGroups.forEach((needsUpdate, gIdx) => {
+            if (needsUpdate && emotionMeshRefs.current[gIdx]) {
+                emotionMeshRefs.current[gIdx]!.instanceMatrix.needsUpdate = true;
+            }
+        });
+
+        // Halo
+        if (haloRef.current && hoveredEmotionIndex !== null) {
+            const em = emotions[hoveredEmotionIndex];
+            if (em) {
+                // Determine group from texture
+                const gIdx = em.textureUrl ? (parseInt(em.textureUrl.match(/_(\d)\.png/)![1]) - 1) : 0;
+                const group = emotionGroups[gIdx];
+                if (group) {
+                    const instanceId = instanceLookup[gIdx].indexOf(hoveredEmotionIndex);
+
+                    if (instanceId !== -1 && emotionMeshRefs.current[gIdx]) {
+                        emotionMeshRefs.current[gIdx]!.getMatrixAt(instanceId, dummy.matrix);
+                        dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+                        haloRef.current.position.copy(dummy.position);
+                        haloRef.current.quaternion.copy(dummy.quaternion);
+                        haloRef.current.scale.copy(dummy.scale).multiplyScalar(1.2 + Math.sin(time * 3) * 0.05);
+                        haloRef.current.updateMatrix();
+                    }
+                }
             }
         }
     });
 
-    // Interaction Handlers (Targeted at Emotions only for now?)
-    const handlePointerMoveEmotions = (e: ThreeEvent<PointerEvent>) => {
+    const handlePointerAction = (e: ThreeEvent<PointerEvent>, type: 'hover' | 'click') => {
         if (isCinematic) return;
         e.stopPropagation();
-        const id = e.instanceId!;
-        // 'id' is index in emotionMesh, which maps 1:1 to emotions array
-        setCursorPointer(true);
-        if (hoveredEmotionIndex !== id) {
-            setHoveredEmotionIndex(id);
-            soundManager.playHover();
-            onLeafHover(emotions[id], e.clientX, e.clientY);
-        }
-    };
 
-    const handlePointerOut = () => {
-        setCursorPointer(false);
-        setHoveredEmotionIndex(null);
-        onLeafHover(null, 0, 0);
+        const gIdx = emotionMeshRefs.current.findIndex(ref => ref === e.object);
+        if (gIdx === -1) return;
+
+        const instanceId = e.instanceId!;
+        const originalIdx = instanceLookup[gIdx][instanceId];
+
+        if (originalIdx !== undefined && originalIdx < emotions.length) {
+            if (type === 'hover') {
+                setCursorPointer(true);
+                if (hoveredEmotionIndex !== originalIdx) {
+                    setHoveredEmotionIndex(originalIdx);
+                    soundManager.playHover();
+                    onLeafHover(emotions[originalIdx], e.clientX, e.clientY);
+                }
+            } else {
+                soundManager.playClick();
+                onLeafClick(emotions[originalIdx]);
+            }
+        }
     };
 
     return (
         <group>
             {/* Branches */}
-            <instancedMesh
-                ref={branchMeshRef}
-                args={[undefined, undefined, branchTransforms.length]}
-                castShadow
-                receiveShadow
-            >
+            <instancedMesh ref={branchMeshRef} args={[undefined, undefined, branchTransforms.length]} castShadow receiveShadow>
                 <cylinderGeometry args={[0.3, 0.4, 1, 5]} />
                 <meshStandardMaterial color="#3E3228" roughness={0.9} />
             </instancedMesh>
 
-            {/* Layer A: Canopy (Sprites) - Cheap */}
-            <instancedMesh
-                ref={canopyMeshRef}
-                args={[undefined, undefined, canopyTransforms.length]}
-                castShadow
-                receiveShadow
-            >
+            {/* Canopy */}
+            <instancedMesh ref={canopyMeshRef} args={[undefined, undefined, canopyTransforms.length]} castShadow receiveShadow visible={stage >= 2}>
                 <planeGeometry args={[1, 1]} />
-                <meshStandardMaterial
-                    map={leafMap}
-                    transparent
-                    side={THREE.DoubleSide}
-                    alphaTest={0.4} // Tuned
-                    depthWrite={false} // Tuned
-                    color="#556b2f" // Base color
-                />
+                <meshStandardMaterial map={canopyMap} transparent side={THREE.DoubleSide} alphaTest={0.5} depthWrite={false} />
             </instancedMesh>
 
-            {/* Layer B: Emotions (GLB) - Premium */}
-            <instancedMesh
-                ref={emotionMeshRef}
-                args={[glbGeometry, undefined, emotionTransforms.length]}
-                castShadow
-                receiveShadow
-                onPointerMove={handlePointerMoveEmotions}
-                onPointerOut={handlePointerOut}
-                onClick={(e) => {
-                    if (isCinematic) return;
-                    e.stopPropagation();
-                    const id = e.instanceId!;
-                    soundManager.playClick();
-                    onLeafClick(emotions[id]);
-                }}
-            >
-                {/* Physical Material for Premium feel */}
-                <meshPhysicalMaterial
-                    color="#ffffff" // Tinted via instanceColor
-                    metalness={0.0}
-                    roughness={0.45}
-                    clearcoat={0.35}
-                    clearcoatRoughness={0.25}
-                    transmission={0.2} // Glassy
-                    thickness={0.18}
-                    ior={1.35}
-                />
-            </instancedMesh>
+            {/* Emotions - 5 Groups */}
+            {emotionGroups.map((group, i) => (
+                <instancedMesh
+                    key={`em-group-${i}`}
+                    ref={el => emotionMeshRefs.current[i] = el}
+                    args={[glbGeometry, undefined, group.transforms.length]}
+                    castShadow receiveShadow
+                    visible={stage >= 3}
+                    onPointerMove={(e) => handlePointerAction(e, 'hover')}
+                    onPointerOut={() => { setCursorPointer(false); setHoveredEmotionIndex(null); onLeafHover(null, 0, 0); }}
+                    onClick={(e) => handlePointerAction(e, 'click')}
+                >
+                    <meshPhysicalMaterial
+                        map={emotionMaps[i]}
+                        color="#ffffff"
+                        metalness={0.1} roughness={0.6}
+                        side={THREE.DoubleSide}
+                        transparent
+                        alphaTest={0.5}
+                        clearcoat={0.6}
+                        transmission={0.3}
+                        thickness={0.2}
+                        ior={1.45}
+                        emissive="#ffffff"
+                        emissiveIntensity={0.5}
+                        toneMapped={false}
+                    />
+                </instancedMesh>
+            ))}
 
-            {/* Halo */}
             <mesh ref={haloRef} visible={hoveredEmotionIndex !== null}>
-                <planeGeometry args={[1, 1]} />
-                <meshStandardMaterial
-                    color="white"
-                    emissive="white"
-                    emissiveIntensity={1.5}
-                    transparent
-                    opacity={0.3}
-                    depthTest={false}
-                    side={THREE.DoubleSide}
-                />
+                <planeGeometry args={[1.2, 1.2]} />
+                <meshStandardMaterial color="white" emissive="white" emissiveIntensity={1.5} transparent opacity={0.3} depthTest={false} side={THREE.DoubleSide} />
             </mesh>
         </group>
     );

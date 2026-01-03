@@ -47,11 +47,12 @@ export const LeafCinematicModal: React.FC = () => {
                 <spotLight position={[0, 3, 2]} angle={0.4} penumbra={0.5} intensity={1.0} castShadow />
 
                 <Environment preset="sunset" blur={1} />
-
-                <HeroLeaf
-                    emotion={focusedEmotion}
-                    tint={focusedEmotion.color}
-                />
+                <React.Suspense fallback={null}>
+                    <HeroLeaf
+                        emotion={focusedEmotion}
+                        tint={focusedEmotion.color}
+                    />
+                </React.Suspense>
 
                 <ContactShadows position={[0, -1.2, 0]} opacity={0.4} blur={2.5} scale={8} far={4} color="#1a1005" />
 

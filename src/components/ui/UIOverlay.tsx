@@ -1,224 +1,216 @@
-import React from 'react';
-import { RefreshCcw, Play, Pause, Wind, Monitor, Maximize, HelpCircle } from 'lucide-react';
-import { soundManager } from '../../utils/SoundManager';
-
+import React, { useState, useEffect } from 'react';
+import {
+    RefreshCcw,
+    Wind,
+    Pause,
+    Play,
+    Maximize2,
+    Minus,
+    Zap,
+    Sparkles
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import confetti from 'canvas-confetti';
 import { useStore } from '../../store/useStore';
+import { soundManager } from '../../utils/SoundManager';
+import { cn } from '../../utils/cn';
 
 export const UIOverlay: React.FC = () => {
     const {
-        seed,
-        quality,
-        reduceMotion,
-        isCinematic,
         regenerateSeed,
-        setQuality,
-        setReduceMotion,
-        setCinematic,
         windLevel,
-        isPaused,
         setWindLevel,
-        togglePause,
-        triggerCameraReset,
-        setFocusedEmotion
+        isPaused,
+        setIsPaused,
+        isCinematic,
+        setCinematic,
+        setReduceMotion,
+        reduceMotion
     } = useStore();
 
-    // Hotkeys
-    React.useEffect(() => {
-        const handleKeyDown = (e: KeyboardEvent) => {
-            // Ignore if typing in input (though we don't have many)
-            if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+    const [isVisible, setIsVisible] = useState(false);
+    const [isMinimized, setIsMinimized] = useState(false);
 
-            switch (e.key.toLowerCase()) {
-                case 'r':
-                    triggerCameraReset();
-                    break;
-                case ' ':
-                    e.preventDefault(); // Prevent scroll
-                    togglePause();
-                    break;
-                case 'q': {
-                    const qualities = ['Low', 'Balanced', 'High'];
-                    const next = qualities[(qualities.indexOf(quality) + 1) % qualities.length];
-                    setQuality(next);
-                    break;
-                }
-                case 'w': {
-                    const levels: ('Off' | 'Calm' | 'Breezy')[] = ['Off', 'Calm', 'Breezy'];
-                    const next = levels[(levels.indexOf(windLevel) + 1) % levels.length];
-                    setWindLevel(next);
-                    break;
-                }
-                case 'escape':
-                    if (isCinematic) setCinematic(false);
-                    setFocusedEmotion(null);
-                    break;
-            }
-        };
+    useEffect(() => {
+        const timer = setTimeout(() => setIsVisible(true), 1500);
+        return () => clearTimeout(timer);
+    }, []);
 
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [quality, windLevel, isCinematic, triggerCameraReset, togglePause, setQuality, setWindLevel, setCinematic, setFocusedEmotion]);
+    const handleRegenerate = () => {
+        soundManager.playRegenerate();
+        regenerateSeed();
+        confetti({
+            particleCount: 80,
+            spread: 60,
+            origin: { x: 0.1, y: 0.9 }, // From the panel area
+            colors: ['#2d5a27', '#cea86c', '#615225', '#f9ce98']
+        });
+    };
 
-    const onRegenerate = regenerateSeed;
-    // const onQualityChange = setQuality; // Removed as used directly
-    const onReduceMotionChange = setReduceMotion;
-    const onExitCinematic = () => setCinematic(false);
+    const togglePause = () => {
+        soundManager.playClick();
+        setIsPaused(!isPaused);
+    };
+
+    const nextWindLevel = () => {
+        soundManager.playClick();
+        const levels: ('Off' | 'Calm' | 'Breezy')[] = ['Off', 'Calm', 'Breezy'];
+        const currentIdx = levels.indexOf(windLevel);
+        setWindLevel(levels[(currentIdx + 1) % levels.length]);
+    };
+
     if (isCinematic) {
         return (
-            <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-20 flex gap-4">
+            <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                className="fixed bottom-12 left-1/2 -translate-x-1/2 z-50 flex gap-4"
+            >
                 <button
-                    onClick={() => {
-                        soundManager.playRegenerate();
-                        onRegenerate();
-                    }}
-                    className="
-                        group flex items-center justify-center gap-3 py-3 px-8
-                        bg-black/20 backdrop-blur-xl border border-white/10 text-white
-                        font-serif tracking-widest font-medium text-xs uppercase rounded-full
-                        hover:bg-white/10 hover:border-white/30 transition-all duration-500
-                    "
+                    onClick={handleRegenerate}
+                    className="bg-white/90 backdrop-blur-xl border border-black/10 flex items-center gap-3 py-3 px-8 text-black rounded-full font-serif tracking-widest text-xs uppercase hover:bg-white transition-all shadow-xl active:scale-95"
                 >
-                    <RefreshCcw size={14} className="opacity-70 group-hover:rotate-180 transition-transform duration-700" />
+                    <RefreshCcw size={14} className="opacity-70" />
                     Renovar Árvore
                 </button>
 
                 <button
-                    onClick={onExitCinematic}
-                    className="
-                        group flex items-center justify-center gap-3 py-3 px-8
-                        bg-white/90 backdrop-blur-xl border border-white/40 text-boho-dark
-                        font-serif tracking-widest font-medium text-xs uppercase rounded-full
-                        hover:bg-white hover:scale-105 transition-all duration-300 shadow-lg shadow-white/10
-                    "
+                    onClick={() => setCinematic(false)}
+                    className="bg-black/90 hover:bg-black text-white flex items-center gap-3 py-3 px-8 rounded-full font-serif tracking-widest text-xs uppercase transition-all shadow-xl active:scale-95"
                 >
                     Voltar
                 </button>
-            </div>
+            </motion.div>
         );
     }
 
     return (
-        <div className="absolute top-8 left-8 z-10 pointer-events-none">
-            <div className="
-                bg-white/30 backdrop-blur-md border border-white/20
-                shadow-[0_8px_32px_rgba(62,50,40,0.1)] rounded-3xl p-8 max-w-sm
-                pointer-events-auto transition-transform hover:scale-[1.01] duration-500
-            ">
-                <span className="text-xs font-bold tracking-[0.2em] text-boho-clay uppercase mb-3 block opacity-80">
-                    Jornada Interior
-                </span>
-                <h1 className="text-5xl font-serif font-medium text-boho-dark drop-shadow-sm mb-4 leading-tight">
-                    Árvore das Emoções
-                </h1>
-                <div className="w-16 h-1 bg-boho-sage rounded-full mb-5 opacity-70" />
+        <AnimatePresence>
+            {isVisible && (
+                <motion.div
+                    initial={{ opacity: 0, scale: 0.8, x: -40, y: 40 }}
+                    animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.8 }}
+                    transition={{ duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
+                    className="fixed bottom-8 left-8 z-50 pointer-events-none"
+                    style={{ minWidth: '240px' }}
+                >
+                    <div className={cn(
+                        "pointer-events-auto flex flex-col gap-3 transition-all duration-500",
+                        isMinimized ? "w-14" : "w-64"
+                    )}>
+                        {/* Elegant Header */}
+                        <div className="bg-white/95 backdrop-blur-3xl border border-white shadow-2xl rounded-2xl p-3 flex items-center justify-between overflow-hidden">
+                            <div className={cn("flex items-center gap-2.5", isMinimized && "hidden")}>
+                                <div className="p-1.5 bg-emerald-100 rounded-lg">
+                                    <Sparkles size={16} className="text-emerald-700" />
+                                </div>
+                                <div className="flex flex-col">
+                                    <span className="text-[10px] font-black text-gray-900 uppercase tracking-[0.15em] leading-none">Painel</span>
+                                    <span className="text-[9px] font-medium text-gray-400 uppercase tracking-widest mt-1">Status: Ativo</span>
+                                </div>
+                            </div>
 
-                <p className="text-boho-text text-sm font-medium leading-relaxed italic mb-8">
-                    "Explore sua paisagem interior. Cada folha, uma reflexão."
-                </p>
-
-                <div className="flex gap-3 mb-6">
-                    <button
-                        onClick={() => {
-                            soundManager.playRegenerate();
-                            onRegenerate();
-                        }}
-                        className="
-                            group flex-1 flex items-center justify-center gap-3 py-4 px-6
-                            bg-boho-terracotta hover:bg-boho-clay text-white
-                            font-serif tracking-wider font-medium text-sm rounded-full
-                            shadow-lg shadow-boho-terracotta/20 
-                            transition-all duration-300 ease-out
-                            active:scale-[0.98]
-                        "
-                    >
-                        <RefreshCcw size={18} className="transition-transform group-hover:-rotate-180 duration-700 opacity-90" />
-                        Renovar
-                    </button>
-
-                    <button
-                        onClick={() => {
-                            const url = new URL(window.location.href);
-                            url.searchParams.set('seed', seed.toString());
-                            navigator.clipboard.writeText(url.toString());
-                            alert('Link com a semente copiado!');
-                        }}
-                        className="
-                            p-4 bg-boho-sage/10 hover:bg-boho-sage text-boho-sage hover:text-white
-                            rounded-full transition-all duration-300 active:scale-95
-                        "
-                        title="Copiar link da semente"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
-                    </button>
-                </div>
-
-                <div className="flex flex-col gap-2">
-                    <span className="text-[10px] font-bold tracking-widest text-boho-clay/60 uppercase">Controles</span>
-
-                    {/* Control Bar */}
-                    <div className="flex flex-wrap gap-2 p-2 bg-boho-clay/5 rounded-2xl">
-                        <button
-                            onClick={() => triggerCameraReset()}
-                            className="p-2 rounded-xl text-boho-clay/60 hover:bg-white hover:text-boho-terracotta transition-colors"
-                            title="Resetar Câmera (R)"
-                        >
-                            <Maximize size={16} />
-                        </button>
-
-                        <button
-                            onClick={togglePause}
-                            className="p-2 rounded-xl text-boho-clay/60 hover:bg-white hover:text-boho-terracotta transition-colors"
-                            title={isPaused ? "Retomar (Espaço)" : "Pausar (Espaço)"}
-                        >
-                            {isPaused ? <Play size={16} /> : <Pause size={16} />}
-                        </button>
-
-                        <button
-                            onClick={() => {
-                                const levels: ('Off' | 'Calm' | 'Breezy')[] = ['Off', 'Calm', 'Breezy'];
-                                const next = levels[(levels.indexOf(windLevel) + 1) % levels.length];
-                                setWindLevel(next);
-                            }}
-                            className="p-2 rounded-xl text-boho-clay/60 hover:bg-white hover:text-boho-terracotta transition-colors flex gap-1 items-center"
-                            title={`Vento: ${windLevel} (W)`}
-                        >
-                            <Wind size={16} />
-                            <span className="text-[10px] font-bold">{windLevel}</span>
-                        </button>
-
-                        <button
-                            onClick={() => {
-                                const qualities = ['Low', 'Balanced', 'High'];
-                                const next = qualities[(qualities.indexOf(quality) + 1) % qualities.length];
-                                setQuality(next);
-                            }}
-                            className="p-2 rounded-xl text-boho-clay/60 hover:bg-white hover:text-boho-terracotta transition-colors flex gap-1 items-center"
-                            title={`Qualidade: ${quality} (Q)`}
-                        >
-                            <Monitor size={16} />
-                            <span className="text-[10px] font-bold">{quality === 'Low' ? 'LO' : quality === 'Balanced' ? 'MED' : 'HI'}</span>
-                        </button>
-                    </div>
-
-                    <div className="flex flex-col gap-4 mt-6 pt-6 border-t border-boho-clay/10">
-                        <label className="flex items-center justify-between cursor-pointer group opacity-80 hover:opacity-100 transition-opacity">
-                            <span className="text-[10px] font-bold tracking-widest text-boho-clay/60 uppercase">Reduzir Movimento</span>
-                            <div
-                                onClick={() => onReduceMotionChange(!reduceMotion)}
-                                className={`w-8 h-4 rounded-full p-0.5 transition-colors duration-300 ${reduceMotion ? 'bg-boho-sage' : 'bg-boho-clay/20'}`}
+                            <button
+                                onClick={() => setIsMinimized(!isMinimized)}
+                                className="p-1.5 hover:bg-black/5 rounded-lg transition-colors text-gray-400 group"
                             >
-                                <div className={`w-3 h-3 bg-white rounded-full transition-transform duration-300 ${reduceMotion ? 'translate-x-4' : 'translate-x-0'}`} />
-                            </div>
-                        </label>
-                        <div className="flex justify-between items-center opacity-60">
-                            <div className="flex items-center gap-1">
-                                <HelpCircle size={12} />
-                                <span className="text-[10px]">Atalhos: R, Space, Q, W, Esc</span>
-                            </div>
+                                {isMinimized ? (
+                                    <Maximize2 size={16} className="group-hover:text-emerald-700 transition-colors" />
+                                ) : (
+                                    <Minus size={16} className="group-hover:text-amber-700 transition-colors" />
+                                )}
+                            </button>
                         </div>
+
+                        {/* Elegant Body */}
+                        <motion.div
+                            animate={{
+                                height: isMinimized ? 0 : "auto",
+                                opacity: isMinimized ? 0 : 1
+                            }}
+                            className="overflow-hidden"
+                        >
+                            <div className="bg-white/90 backdrop-blur-3xl border border-white shadow-2xl rounded-3xl p-4 flex flex-col gap-5">
+                                {/* Action Buttons */}
+                                <div className="grid grid-cols-2 gap-2">
+                                    <button
+                                        onClick={handleRegenerate}
+                                        className="group flex flex-col items-center gap-2 p-3 bg-gray-50 hover:bg-emerald-50 rounded-2xl transition-all border border-gray-100 hover:border-emerald-200"
+                                    >
+                                        <div className="p-2 bg-white rounded-xl shadow-sm group-hover:rotate-180 transition-transform duration-700 text-emerald-700">
+                                            <RefreshCcw size={16} />
+                                        </div>
+                                        <span className="text-[9px] font-bold text-gray-400 group-hover:text-emerald-700 uppercase tracking-widest">Regerar</span>
+                                    </button>
+
+                                    <button
+                                        onClick={togglePause}
+                                        className="group flex flex-col items-center gap-2 p-3 bg-gray-50 hover:bg-amber-50 rounded-2xl transition-all border border-gray-100 hover:border-amber-200"
+                                    >
+                                        <div className="p-2 bg-white rounded-xl shadow-sm group-hover:scale-110 transition-transform text-amber-700">
+                                            {isPaused ? <Play size={16} fill="currentColor" /> : <Pause size={16} fill="currentColor" />}
+                                        </div>
+                                        <span className="text-[9px] font-bold text-gray-400 group-hover:text-amber-700 uppercase tracking-widest">
+                                            {isPaused ? "Retomar" : "Pausar"}
+                                        </span>
+                                    </button>
+                                </div>
+
+                                {/* Sliders / Status */}
+                                <div className="space-y-4 pt-1">
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2">
+                                                <Wind size={12} className="text-sky-600" />
+                                                <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Vento: <span className="text-gray-900">{windLevel}</span></span>
+                                            </div>
+                                            <button
+                                                onClick={nextWindLevel}
+                                                className="text-[9px] px-2 py-0.5 bg-sky-50 text-sky-700 font-bold border border-sky-100 rounded-full hover:bg-sky-100 transition-colors uppercase tracking-widest"
+                                            >
+                                                Alterar
+                                            </button>
+                                        </div>
+                                        <div className="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+                                            <motion.div
+                                                initial={false}
+                                                animate={{ width: windLevel === 'Off' ? "0%" : windLevel === 'Calm' ? "50%" : "100%" }}
+                                                className="h-full bg-gradient-to-r from-sky-400 to-sky-300 shadow-[0_0_8px_rgba(56,189,248,0.5)]"
+                                            />
+                                        </div>
+                                    </div>
+
+                                    {/* Toggle Switch */}
+                                    <div className="flex items-center justify-between p-3 bg-gray-50/50 rounded-2xl border border-gray-100">
+                                        <div className="flex items-center gap-2.5">
+                                            <div className="p-1.5 bg-white rounded-lg shadow-sm">
+                                                <Zap size={14} className={cn("transition-colors", reduceMotion ? "text-gray-300" : "text-amber-500")} />
+                                            </div>
+                                            <div className="flex flex-col">
+                                                <span className="text-[10px] font-bold text-gray-800 uppercase tracking-wide">Performance</span>
+                                                <span className="text-[8px] text-gray-400 font-medium">Melhor Visual</span>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => setReduceMotion(!reduceMotion)}
+                                            className={cn(
+                                                "w-9 h-5 rounded-full p-1 transition-all duration-300 relative",
+                                                reduceMotion ? "bg-gray-200" : "bg-emerald-500"
+                                            )}
+                                        >
+                                            <motion.div
+                                                animate={{ x: reduceMotion ? 0 : 16 }}
+                                                className="w-3 h-3 bg-white rounded-full shadow-md"
+                                            />
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </motion.div>
                     </div>
-                </div>
-            </div>
-        </div>
+                </motion.div>
+            )}
+        </AnimatePresence>
     );
 };

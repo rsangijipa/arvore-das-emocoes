@@ -11,33 +11,29 @@ export const Effects: React.FC<EffectsProps> = ({ quality, isCinematic }) => {
     if (quality === 'Low') {
         return (
             <EffectComposer>
-                <Bloom
-                    intensity={0.5}
-                    luminanceThreshold={0.8}
-                    mipmapBlur={false}
-                />
+                <Bloom intensity={0.5} luminanceThreshold={0.8} />
             </EffectComposer>
         );
     }
 
     return (
-        <EffectComposer>
+        <EffectComposer disableNormalPass>
             {isCinematic ? (
                 <DepthOfField
-                    focusDistance={0.005}
-                    focalLength={0.2}
-                    bokehScale={quality === 'High' ? 5 : 3}
-                    height={480}
+                    focusDistance={0.02} // Adjusted for cinematic modal view
+                    focalLength={0.4}
+                    bokehScale={quality === 'High' ? 4 : 2}
                 />
-            ) : <></>}
+            ) : null}
+
             <Bloom
-                intensity={isCinematic ? 1.5 : (quality === 'High' ? 1.2 : 0.8)}
-                luminanceThreshold={isCinematic ? 0.2 : 0.4} // Glows more easily
-                luminanceSmoothing={0.9}
+                intensity={isCinematic ? 1.4 : (quality === 'High' ? 1.0 : 0.7)}
+                luminanceThreshold={isCinematic ? 0.2 : 0.5}
                 mipmapBlur
             />
+
             <Noise
-                opacity={0.015}
+                opacity={0.01}
                 blendFunction={BlendFunction.OVERLAY}
             />
         </EffectComposer>

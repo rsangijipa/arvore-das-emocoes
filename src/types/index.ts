@@ -9,6 +9,7 @@ export interface EmotionData {
     tags: string[];
     position?: [number, number, number];
     timestamp?: number;
+    textureUrl?: string;
 }
 
 export interface TreeConfig {

@@ -11,6 +11,7 @@ interface AppState {
     windLevel: 'Off' | 'Calm' | 'Breezy';
     isPaused: boolean;
     resetCameraTrigger: number;
+    activeTab: 'home' | 'gallery' | 'explore';
 
     setSeed: (seed: number) => void;
     regenerateSeed: () => void;
@@ -20,6 +21,7 @@ interface AppState {
     setCinematic: (isCinematic: boolean) => void;
     setReduceMotion: (reduceMotion: boolean) => void;
     setWindLevel: (level: 'Off' | 'Calm' | 'Breezy') => void;
+    setActiveTab: (tab: 'home' | 'gallery' | 'explore') => void;
     togglePause: () => void;
     triggerCameraReset: () => void;
 }
@@ -34,6 +36,7 @@ export const useStore = create<AppState>((set) => ({
     windLevel: 'Calm',
     isPaused: false,
     resetCameraTrigger: 0,
+    activeTab: 'home',
 
     setSeed: (seed) => set({ seed }),
     regenerateSeed: () => set({ seed: Math.random() * 10000 }),
@@ -43,6 +46,7 @@ export const useStore = create<AppState>((set) => ({
     setCinematic: (isCinematic) => set({ isCinematic }),
     setReduceMotion: (reduceMotion) => set({ reduceMotion }),
     setWindLevel: (windLevel) => set({ windLevel }),
+    setActiveTab: (activeTab) => set({ activeTab }),
     togglePause: () => set((state) => ({ isPaused: !state.isPaused })),
     triggerCameraReset: () => set((state) => ({ resetCameraTrigger: state.resetCameraTrigger + 1 })),
 }));

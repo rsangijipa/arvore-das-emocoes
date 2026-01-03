@@ -2,41 +2,70 @@ import { useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import type { EmotionData } from '../types';
 import { createRng } from '../utils/random';
+import { RAW_MESSAGES } from '../data/messages';
 
-type SeedEmotion = Pick<EmotionData, 'text' | 'color' | 'category' | 'subcategory' | 'intensity' | 'tags'>;
+// Helper to map category/tags to color and broad category
+const mapCategoryToVisuals = (cat: string): { color: string; category: EmotionData['category'] } => {
+    const c = cat.toLowerCase();
 
-const RAW_EMOTIONS: SeedEmotion[] = [
-    { text: "Gratidão", color: "#F4A460", category: 'alegria', subcategory: 'reconhecimento', intensity: 4, tags: ['paz', 'conectividade'] },
-    { text: "Ansiedade", color: "#8B4513", category: 'medo', subcategory: 'antecipação', intensity: 5, tags: ['alerta', 'tensão'] },
-    { text: "Alegria", color: "#FFD700", category: 'alegria', subcategory: 'entusiasmo', intensity: 5, tags: ['brilho', 'energia'] },
-    { text: "Saudade", color: "#4682B4", category: 'tristeza', subcategory: 'melancolia', intensity: 3, tags: ['memória', 'distância'] },
-    { text: "Esperança", color: "#98FB98", category: 'alegria', subcategory: 'otimismo', intensity: 4, tags: ['futuro', 'luz'] },
-    { text: "Incerto", color: "#2F4F4F", category: 'medo', subcategory: 'dúvida', intensity: 2, tags: ['névoa', 'cautela'] },
-    { text: "Amor", color: "#FF69B4", category: 'amor', subcategory: 'ternura', intensity: 5, tags: ['afeto', 'união'] },
-    { text: "Raiva", color: "#CD5C5C", category: 'raiva', subcategory: 'indignação', intensity: 4, tags: ['limites', 'fogo'] },
-];
+    // Warm/Positive -> Alegria/Amor (Golds, Pinks, Warm Greens)
+    if (['alegria', 'amor', 'gratidão', 'coragem', 'recomeço', 'progresso', 'prosperidade', 'cura', 'motivação'].includes(c)) {
+        return { color: '#FFD700', category: 'alegria' };
+    }
+    // Deep/Reflective -> Outros/Amor (Blues, Teals)
+    if (['paz', 'sabedoria', 'presença', 'clareza', 'reflexão', 'intuicão', 'sentido', 'confiança'].includes(c)) {
+        return { color: '#4682B4', category: 'amor' };
+    }
+    // Hard/Firm -> Raiva/Coragem (Reds, Oranges)
+    if (['raiva', 'limites', 'disciplina', 'resiliência', 'força', 'constância', 'integridade'].includes(c)) {
+        return { color: '#CD5C5C', category: 'raiva' };
+    }
+    // Heavy -> Tristeza/Medo (Greys, Dark Blues)
+    if (['tristeza', 'medo', 'ansiedade', 'dor', 'sofrimento'].includes(c)) {
+        return { color: '#2F4F4F', category: 'medo' };
+    }
 
-export const useEmotionData = (count: number = 50) => {
+    // Default fallback
+    return { color: '#b59922', category: 'outros' };
+};
+
+export const useEmotionData = (count: number = 50, seed: number = 1337) => {
     const emotions = useMemo<EmotionData[]>(() => {
-        const rng = createRng(1337 + count);
+        const rng = createRng(seed + count);
         const baseTimestamp = new Date('2024-01-01T00:00:00Z').getTime();
 
+        // Shuffle the RAW_MESSAGES to get 'count' random ones if count < 100
+        // But if count represents the tree size, we might want to repeat or fill.
+
+        // Deterministic shuffle
+        const indices = Array.from({ length: RAW_MESSAGES.length }, (_, i) => i);
+        for (let i = indices.length - 1; i > 0; i--) {
+            const j = Math.floor(rng() * (i + 1));
+            [indices[i], indices[j]] = [indices[j], indices[i]];
+        }
+
         return Array.from({ length: count }).map((_, i) => {
-            const base = RAW_EMOTIONS[i % RAW_EMOTIONS.length];
+            // Cycle through shuffled messages
+            const msgIndex = indices[i % indices.length];
+            const base = RAW_MESSAGES[msgIndex];
+
+            const visuals = mapCategoryToVisuals(base.category);
             const drift = Math.floor(rng() * 1000000000);
+
             return {
-                id: uuidv4(),
-                text: base.text,
-                reflection: "Reflexão sobre " + base.text + "...",
-                color: base.color,
-                category: base.category,
-                subcategory: base.subcategory,
-                intensity: base.intensity,
-                tags: base.tags,
+                id: uuidv4(), // Unique instance ID
+                text: base.category.charAt(0).toUpperCase() + base.category.slice(1), // Title case category as "Emotion Name"
+                reflection: base.message, // The full quote
+                color: visuals.color,
+                category: visuals.category,
+                subcategory: base.tags[0] || 'geral',
+                intensity: 3 + Math.floor(rng() * 3), // Random intensity 3-5
+                tags: [...base.tags, base.tone],
                 timestamp: baseTimestamp - drift,
+                textureUrl: `/textures/leaves/leaf_tex_0${Math.floor(rng() * 5) + 1}.png`,
             };
         });
-    }, [count]);
+    }, [count, seed]);
 
     return emotions;
 };

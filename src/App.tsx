@@ -1,13 +1,12 @@
 import { useEffect } from 'react';
 import { useStore } from './store/useStore';
 import { EmotionForest } from './components/3d/EmotionForest';
-import { LeafViewerModal } from './components/ui/LeafViewerModal';
 import { useEmotionData } from './hooks/useEmotionData';
 import './App.css';
 
 function App() {
-  const initialEmotions = useEmotionData(150);
-  const { focusedEmotion, setEmotions, setFocusedEmotion } = useStore();
+  const { seed, setEmotions } = useStore();
+  const initialEmotions = useEmotionData(10, seed);
 
   // Sync initial emotions
   useEffect(() => {
@@ -18,12 +17,7 @@ function App() {
   return (
     <>
       <EmotionForest />
-
-      {/* Modal is global */}
-      <LeafViewerModal
-        emotion={focusedEmotion}
-        onClose={() => setFocusedEmotion(null)}
-      />
+      {/* Modal is handled within EmotionForest for 3D cinematic effect */}
     </>
   );
 }

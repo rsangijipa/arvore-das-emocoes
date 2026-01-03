@@ -6,7 +6,7 @@ import { createRng } from '../../utils/random';
 
 export const LightParticles: React.FC = () => {
     const meshRef = useRef<THREE.InstancedMesh>(null);
-    const count = 300;
+    const count = 600;
     const { seed } = useStore();
 
     // Fix Bug #4: Deterministic RNG
@@ -17,20 +17,23 @@ export const LightParticles: React.FC = () => {
         const rng = randomFor; // local alias
         const arr = new Float32Array(count * 3);
         for (let i = 0; i < count; i++) {
-            arr[i * 3] = (rng() - 0.5) * 60;
-            arr[i * 3 + 1] = rng() * 40;
-            arr[i * 3 + 2] = (rng() - 0.5) * 60;
+            arr[i * 3] = (rng() - 0.5) * 70; // Wider spread
+            arr[i * 3 + 1] = rng() * 45; // Higher
+            arr[i * 3 + 2] = (rng() - 0.5) * 70;
         }
         return arr;
     }, [count, randomFor]);
 
-    // Random speeds
-    const speeds = useMemo(() => {
+    // Random speeds & sizes
+    const { speeds, scales } = useMemo(() => {
         const rng = randomFor;
-        // Need to advance/fork rng or just loop? 
-        // createRng returns a function that updates state, so reusing it continues sequence. 
-        // But useMemo might run twice. 'randomFor' instance is stable per seed.
-        return new Float32Array(count).map(() => 0.2 + rng() * 0.5);
+        const s = new Float32Array(count);
+        const sc = new Float32Array(count);
+        for (let i = 0; i < count; i++) {
+            s[i] = 0.1 + rng() * 0.4;
+            sc[i] = 0.5 + rng() * 1.5; // Scale multiplier
+        }
+        return { speeds: s, scales: sc };
     }, [count, randomFor]);
 
     const dummy = useMemo(() => new THREE.Object3D(), []);
@@ -60,7 +63,8 @@ export const LightParticles: React.FC = () => {
             z += Math.cos(t * 0.3 + i) * 2;
 
             dummy.position.set(x, y, z);
-            dummy.scale.setScalar(Math.sin(t * 2 + i) * 0.05 + 0.1); // Twinkle size
+            const baseScale = scales[i];
+            dummy.scale.setScalar((Math.sin(t * 2 + i) * 0.05 + 0.15) * baseScale); // Twinkle size with variation
             dummy.rotation.set(t, t, t);
             dummy.updateMatrix();
 
@@ -72,13 +76,14 @@ export const LightParticles: React.FC = () => {
 
     return (
         <instancedMesh ref={meshRef} args={[undefined, undefined, count]}>
-            <dodecahedronGeometry args={[0.2, 0]} />
+            <dodecahedronGeometry args={[0.15, 0]} />
             <meshBasicMaterial
-                color="#fffceb"
+                color="#cea86c" // Gold dust
                 transparent
-                opacity={0.6}
+                opacity={0.8}
                 blending={THREE.AdditiveBlending}
                 depthWrite={false}
+                toneMapped={false}
             />
         </instancedMesh>
     );
