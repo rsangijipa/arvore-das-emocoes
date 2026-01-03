@@ -48,7 +48,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
         '/textures/leaves/leaf_tex_05.png'
     ], []);
 
-    const leafMaps = useLoader(THREE.TextureLoader, ['/folha.png', ...textureUrls]);
+    const leafMaps = useLoader(THREE.TextureLoader, [...textureUrls]);
     useLayoutEffect(() => {
         leafMaps.forEach(tex => {
             tex.colorSpace = THREE.SRGBColorSpace;
@@ -57,7 +57,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
     }, [leafMaps]);
 
     const canopyMap = leafMaps[0];
-    const emotionMaps = leafMaps.slice(1);
+    const emotionMaps = leafMaps;
 
     const { scene: glbScene } = useGLTF("/folha.glb");
 
@@ -458,8 +458,15 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
         if (haloRef.current && hoveredEmotionIndex !== null) {
             const em = emotions[hoveredEmotionIndex];
             if (em) {
-                // Determine group from texture
-                const gIdx = em.textureUrl ? (parseInt(em.textureUrl.match(/_(\d)\.png/)![1]) - 1) : 0;
+                // Determine group from texture - Safely
+                let gIdx = 0;
+                if (em.textureUrl) {
+                    const match = em.textureUrl.match(/_(\d)\.png/);
+                    if (match && match[1]) {
+                        gIdx = parseInt(match[1]) - 1;
+                    }
+                }
+
                 const group = emotionGroups[gIdx];
                 if (group) {
                     const instanceId = instanceLookup[gIdx].indexOf(hoveredEmotionIndex);
@@ -484,20 +491,47 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
         const gIdx = emotionMeshRefs.current.findIndex(ref => ref === e.object);
         if (gIdx === -1) return;
 
-        const instanceId = e.instanceId!;
-        const originalIdx = instanceLookup[gIdx][instanceId];
+        // Safety check for instanceId
+        if (typeof e.instanceId !== 'number') return;
 
-        if (originalIdx !== undefined && originalIdx < emotions.length) {
+        const instanceId = e.instanceId;
+        const lookupGroup = instanceLookup[gIdx];
+
+        // Safety check for lookup bounds
+        if (!lookupGroup || instanceId < 0 || instanceId >= lookupGroup.length) return;
+
+        const originalIdx = lookupGroup[instanceId];
+
+        if (originalIdx !== undefined && originalIdx >= 0 && originalIdx < emotions.length) {
+            const emotion = emotions[originalIdx];
+            if (!emotion) return;
+
             if (type === 'hover') {
                 setCursorPointer(true);
                 if (hoveredEmotionIndex !== originalIdx) {
                     setHoveredEmotionIndex(originalIdx);
                     soundManager.playHover();
-                    onLeafHover(emotions[originalIdx], e.clientX, e.clientY);
+                    onLeafHover(emotion, e.clientX, e.clientY);
                 }
             } else {
+                // Determine exact world position of the clicked leaf instance
+                // We need to re-query the matrix because it might be moving
+                if (emotionMeshRefs.current[gIdx]) {
+                    const dummy = new THREE.Object3D(); // Create local dummy
+                    emotionMeshRefs.current[gIdx]!.getMatrixAt(instanceId, dummy.matrix);
+                    dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+
+                    // Transform local to world if the group has transformations (it has groupRef y-offset!)
+                    if (groupRef.current) {
+                        dummy.position.applyMatrix4(groupRef.current.matrixWorld);
+                    }
+
+                    // Update emotion with exact position for CameraRig
+                    emotion.position = [dummy.position.x, dummy.position.y, dummy.position.z];
+                }
+
                 soundManager.playClick();
-                onLeafClick(emotions[originalIdx]);
+                onLeafClick(emotion);
             }
         }
     };
@@ -528,20 +562,16 @@ export const InstancedTree: React.FC<InstancedTreeProps> = ({ emotions, onLeafCl
                     onPointerOut={() => { setCursorPointer(false); setHoveredEmotionIndex(null); onLeafHover(null, 0, 0); }}
                     onClick={(e) => handlePointerAction(e, 'click')}
                 >
-                    <meshPhysicalMaterial
+                    <meshStandardMaterial
                         map={emotionMaps[i]}
                         color="#ffffff"
-                        metalness={0.1} roughness={0.6}
+                        roughness={0.6}
+                        metalness={0.1}
                         side={THREE.DoubleSide}
                         transparent
                         alphaTest={0.5}
-                        clearcoat={0.6}
-                        transmission={0.3}
-                        thickness={0.2}
-                        ior={1.45}
                         emissive="#ffffff"
-                        emissiveIntensity={0.5}
-                        toneMapped={false}
+                        emissiveIntensity={0.2}
                     />
                 </instancedMesh>
             ))}

@@ -56,22 +56,17 @@ export const HeroLeaf: React.FC<HeroLeafProps> = ({ emotion, tint = "#ffffff" })
                 const mat = new THREE.MeshPhysicalMaterial({
                     map: texture,
                     color: new THREE.Color(tint).multiplyScalar(1.2), // Boost tint slightly
-                    metalness: 0.1,
-                    roughness: 0.6, // More rough for organic feel
-                    clearcoat: 0.2,
-                    clearcoatRoughness: 0.4,
+                    metalness: 0.05,
+                    roughness: 0.55, // Premium feel
+                    clearcoat: 0.4,
+                    clearcoatRoughness: 0.35,
 
-                    // Reduced transmission to show texture
-                    transmission: 0.05,
-                    thickness: 0.5,
-                    ior: 1.4,
-                    attenuationColor: new THREE.Color(tint),
-                    attenuationDistance: 2.0,
-
+                    // Safe mode: Removed transmission to prevent WebGL Context Lost
                     side: THREE.DoubleSide,
                     bumpMap: texture,
                     bumpScale: 0.02,
-                    alphaTest: 0.5
+                    alphaTest: 0.5,
+                    envMapIntensity: 0.8
                 });
 
                 mesh.material = mat;
@@ -81,38 +76,62 @@ export const HeroLeaf: React.FC<HeroLeafProps> = ({ emotion, tint = "#ffffff" })
         });
     }, [clonedScene, tint, texture]);
 
+    // Refs for animation state
     const animationRef = useRef(0);
+    const startPosRef = useRef<THREE.Vector3 | null>(null);
+    const startRotRef = useRef<THREE.Quaternion | null>(null);
 
     useFrame((state, delta) => {
         if (!group.current) return;
 
+        // Initialize start transform on first frame
+        if (!startPosRef.current) {
+            startPosRef.current = emotion.position ? new THREE.Vector3(...emotion.position) : new THREE.Vector3(0, 0, 0);
+            startRotRef.current = group.current.quaternion.clone();
+        }
+
         // Progress 0 -> 1
-        const speed = 2.0;
+        const speed = 1.5;
         animationRef.current = Math.min(1, animationRef.current + delta * speed);
         const t = animationRef.current;
+        const smooth = 1 - Math.pow(1 - t, 3); // Cubic ease out
 
-        // Easing functions
-        const backOut = (x: number) => {
-            const c1 = 1.70158;
-            const c3 = c1 + 1;
-            return 1 + c3 * Math.pow(x - 1, 3) + c1 * Math.pow(x - 1, 2);
-        };
-        const smooth = 1 - Math.pow(1 - t, 4);
+        // Target: In front of camera
+        const camera = state.camera;
+        const targetPos = camera.position.clone()
+            .add(camera.getWorldDirection(new THREE.Vector3()).multiplyScalar(4)); // 4 units in front
 
-        // Position Jump: Start [0, -3, 1] -> End [0, 0, 0]
-        const startPos = new THREE.Vector3(0, -3, 1);
-        const targetPos = new THREE.Vector3(0, 0, 0);
-        group.current.position.lerpVectors(startPos, targetPos, smooth);
+        // Position Interpolation
+        if (startPosRef.current) {
+            group.current.position.lerpVectors(startPosRef.current, targetPos, smooth);
+        }
 
-        // Scale Elastic
-        group.current.scale.setScalar(backOut(t));
+        // Rotation: Look at camera (billboard)
+        // We want the flat side facing camera. 
+        // Leaf default orientation needs check. Assuming Plane geometry logic or similar.
+        // Usually LookAt makes Z axis point to target.
+        // We blend from original rotation to "Looking at Camera".
 
-        // Rotation Spin
-        const startRot = new THREE.Euler(0, Math.PI, 0);
-        const targetRot = new THREE.Euler(0, -0.25, 0);
-        group.current.rotation.x = THREE.MathUtils.lerp(startRot.x, targetRot.x, smooth);
-        group.current.rotation.y = THREE.MathUtils.lerp(startRot.y, targetRot.y, smooth);
-        group.current.rotation.z = THREE.MathUtils.lerp(startRot.z, targetRot.z, smooth);
+        const targetAllign = new THREE.Object3D();
+        targetAllign.position.copy(group.current.position);
+        targetAllign.lookAt(camera.position);
+
+        // Adjust for leaf model orientation (often need to rotate X or Y to face flat)
+        // Assuming glb leaf points Y up, Z forward?
+        // Let's adding some tilt to be readable.
+        targetAllign.rotateX(Math.PI / 4); // Tilt 45 degrees for "reading on desk" feel
+
+        group.current.quaternion.slerp(targetAllign.quaternion, smooth);
+
+        // Scale pulse
+        const scale = 1.0 + Math.sin(t * Math.PI) * 0.1;
+        // Normalize base scale (HeroLeaf usually scaled down? No, we used s = 2.0 / maxDim previously)
+        // We re-calculate scale in useLayoutEffect, so here we apply relative scale?
+        // Or we just let the useLayoutEffect set the base scale and we animate a parent group?
+        // Current structure: <group ref={group}> <Float> <primitive /> </Float> </group>
+        // The useLayoutEffect scales the PRIMITIVE (root). The GROUP is what we move.
+        // So we can set group scale to 1.
+        group.current.scale.setScalar(scale);
     });
 
     // Dynamic Font Selection
@@ -143,7 +162,7 @@ export const HeroLeaf: React.FC<HeroLeafProps> = ({ emotion, tint = "#ffffff" })
     }, [emotion.timestamp]);
 
     return (
-        <group ref={group} position={[0, -3, 1]} rotation={[0, Math.PI, 0]} scale={[0, 0, 0]}>
+        <group ref={group} scale={[0, 0, 0]}>
             <Float speed={0.6} rotationIntensity={0.15} floatIntensity={0.15}>
                 <primitive object={clonedScene} />
 
@@ -151,7 +170,7 @@ export const HeroLeaf: React.FC<HeroLeafProps> = ({ emotion, tint = "#ffffff" })
                 <Html center transform distanceFactor={1.2} style={{ pointerEvents: "none", opacity: animationRef.current }}>
                     <div
                         className="text-center select-none flex flex-col items-center justify-center p-4"
-                        style={{ width: '280px' }} // Approx 80% of leaf
+                        style={{ width: '320px' }} // Approx 80% of leaf
                     >
                         <div
                             className="text-boho-dark/95 drop-shadow-sm leading-tight mb-3"
@@ -159,14 +178,15 @@ export const HeroLeaf: React.FC<HeroLeafProps> = ({ emotion, tint = "#ffffff" })
                                 fontFamily: fontStyle.family,
                                 fontWeight: fontStyle.weight,
                                 fontStyle: fontStyle.style,
-                                fontSize: '1.8rem',
-                                textShadow: '0 1px 12px rgba(255,255,255,0.4)'
+                                fontSize: '1.2rem', // Smaller for full message
+                                textShadow: '0 1px 12px rgba(255,255,255,0.6)',
+                                whiteSpace: 'pre-wrap' // Handle newlines
                             }}
                         >
-                            "{emotion.text}"
+                            "{emotion.reflection}"
                         </div>
-                        <div className="font-sans text-xs tracking-[0.25em] font-bold text-boho-clay uppercase opacity-60">
-                            {emotion.category}
+                        <div className="font-sans text-[10px] tracking-[0.25em] font-bold text-boho-clay uppercase opacity-60 mt-2">
+                            {emotion.text}
                         </div>
                     </div>
                 </Html>

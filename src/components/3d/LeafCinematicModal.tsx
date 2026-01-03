@@ -1,7 +1,6 @@
 import React from 'react';
 import { Canvas } from '@react-three/fiber';
-import { Environment, OrbitControls } from '@react-three/drei';
-import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing';
+import { Environment, OrbitControls, Html } from '@react-three/drei';
 import { HeroLeaf } from './HeroLeaf';
 import { useStore } from '../../store/useStore';
 import { ArrowLeft } from 'lucide-react';
@@ -44,7 +43,7 @@ export const LeafCinematicModal: React.FC = () => {
 
                     <Environment preset="city" blur={1} />
 
-                    <React.Suspense fallback={null}>
+                    <React.Suspense fallback={<Html center><div className="text-white text-xs tracking-widest uppercase">Carregando...</div></Html>}>
                         <HeroLeaf
                             emotion={focusedEmotion}
                             tint={focusedEmotion.color}
@@ -61,11 +60,6 @@ export const LeafCinematicModal: React.FC = () => {
                         rotateSpeed={0.3}
                         dampingFactor={0.1}
                     />
-
-                    <EffectComposer>
-                        <Bloom intensity={0.3} luminanceThreshold={0.85} luminanceSmoothing={0.1} />
-                        <Vignette eskil={false} offset={0.2} darkness={0.4} />
-                    </EffectComposer>
                 </Canvas>
             </div>
 

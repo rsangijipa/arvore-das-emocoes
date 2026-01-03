@@ -34,35 +34,50 @@ export const useEmotionData = (count: number = 50, seed: number = 1337) => {
         const rng = createRng(seed + count);
         const baseTimestamp = new Date('2024-01-01T00:00:00Z').getTime();
 
-        // Shuffle the RAW_MESSAGES to get 'count' random ones if count < 100
-        // But if count represents the tree size, we might want to repeat or fill.
-
-        // Deterministic shuffle
-        const indices = Array.from({ length: RAW_MESSAGES.length }, (_, i) => i);
-        for (let i = indices.length - 1; i > 0; i--) {
+        // Deterministic shuffle of raw messages to select 'count' unique messages
+        const messageIndices = Array.from({ length: RAW_MESSAGES.length }, (_, i) => i);
+        for (let i = messageIndices.length - 1; i > 0; i--) {
             const j = Math.floor(rng() * (i + 1));
-            [indices[i], indices[j]] = [indices[j], indices[i]];
+            [messageIndices[i], messageIndices[j]] = [messageIndices[j], messageIndices[i]];
+        }
+
+        // Texture distribution for 10 items: 2 of each [1..5]
+        // If count != 10, we cycle or clamp. For strict 10 leaf requirement:
+        // We create a pool of texture indices: [1,1, 2,2, 3,3, 4,4, 5,5]
+        const hardcodedTextures = [1, 1, 2, 2, 3, 3, 4, 4, 5, 5];
+        while (hardcodedTextures.length < count) {
+            // Fill remaining if count > 10 (fallback)
+            hardcodedTextures.push(Math.floor(rng() * 5) + 1);
+        }
+
+        // Shuffle the texture assignments so they don't map linearly to the message list
+        for (let i = hardcodedTextures.length - 1; i > 0; i--) {
+            const j = Math.floor(rng() * (i + 1));
+            [hardcodedTextures[i], hardcodedTextures[j]] = [hardcodedTextures[j], hardcodedTextures[i]];
         }
 
         return Array.from({ length: count }).map((_, i) => {
-            // Cycle through shuffled messages
-            const msgIndex = indices[i % indices.length];
+            // Pick message
+            const msgIndex = messageIndices[i % messageIndices.length];
             const base = RAW_MESSAGES[msgIndex];
 
             const visuals = mapCategoryToVisuals(base.category);
             const drift = Math.floor(rng() * 1000000000);
 
+            // Pick strict texture
+            const texNum = hardcodedTextures[i];
+
             return {
-                id: uuidv4(), // Unique instance ID
-                text: base.category.charAt(0).toUpperCase() + base.category.slice(1), // Title case category as "Emotion Name"
-                reflection: base.message, // The full quote
+                id: uuidv4(),
+                text: base.category.charAt(0).toUpperCase() + base.category.slice(1),
+                reflection: base.message, // The actual quote
                 color: visuals.color,
                 category: visuals.category,
                 subcategory: base.tags[0] || 'geral',
-                intensity: 3 + Math.floor(rng() * 3), // Random intensity 3-5
+                intensity: 3 + Math.floor(rng() * 3),
                 tags: [...base.tags, base.tone],
                 timestamp: baseTimestamp - drift,
-                textureUrl: `/textures/leaves/leaf_tex_0${Math.floor(rng() * 5) + 1}.png`,
+                textureUrl: `/textures/leaves/leaf_tex_0${texNum}.png`,
             };
         });
     }, [count, seed]);

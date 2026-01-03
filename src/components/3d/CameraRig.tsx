@@ -12,7 +12,7 @@ export const CameraRig: React.FC<CameraRigProps> = ({ isCinematic, targetPositio
     // const vec = new THREE.Vector3(); // Removed unused
 
     useFrame((state, delta) => {
-        if (!isCinematic || !targetPosition) return;
+        if (!targetPosition) return;
 
         // Target location: slightly in front of the leaf
         const [tx, ty, tz] = targetPosition;

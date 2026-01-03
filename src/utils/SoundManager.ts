@@ -25,8 +25,12 @@ class SoundManager {
 
     private ensureContext() {
         if (this.ctx && this.ctx.state === 'suspended') {
-            this.ctx.resume();
+            this.ctx.resume().catch(() => { });
         }
+    }
+
+    public resume() {
+        this.ensureContext();
     }
 
     public toggleMute(muted: boolean) {
@@ -39,7 +43,8 @@ class SoundManager {
     // Play a gentle wind chime sound
     public playHover(intensity: number = 0.5) {
         if (!this.enabled || !this.ctx || !this.masterGain) return;
-        this.ensureContext();
+        // Don't force resume on hover to avoid warnings
+        if (this.ctx.state !== 'running') return;
 
         const osc = this.ctx.createOscillator();
         const gain = this.ctx.createGain();
