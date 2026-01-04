@@ -8,7 +8,7 @@ import * as THREE from 'three';
 export interface TextureLoadOptions {
     generateMipmaps?: boolean;
     minFilter?: THREE.TextureFilter;
-    magFilter?: THREE.TextureFilter;
+    magFilter?: THREE.MagnificationTextureFilter;
     isMobile?: boolean;
 }
 
@@ -22,7 +22,7 @@ export const loadOptimizedTexture = (
     const {
         generateMipmaps = !options.isMobile,
         minFilter = options.isMobile ? THREE.LinearFilter : THREE.LinearMipmapLinearFilter,
-        magFilter = THREE.LinearFilter,
+        magFilter = THREE.LinearFilter as THREE.MagnificationTextureFilter,
         isMobile = false,
     } = options;
 
@@ -79,4 +79,6 @@ export const getOptimalTextureUrl = (baseUrl: string): string => {
     
     return baseUrl;
 };
+
+
 

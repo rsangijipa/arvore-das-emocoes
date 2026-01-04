@@ -1,4 +1,4 @@
-import React, { useRef, useLayoutEffect, useMemo } from 'react';
+import React, { useRef, useLayoutEffect } from 'react';
 import * as THREE from 'three';
 import { useLoader, useFrame, useThree } from '@react-three/fiber';
 import { useStore } from '../../store/useStore';
@@ -16,35 +16,37 @@ export const Background360: React.FC<Background360Props> = () => {
     
     // Optimize texture for mobile (clone to avoid modifying hook return)
     const optimizedTexture = React.useMemo(() => {
+        const baseTexture = deviceInfo.isMobile ? texture.clone() : texture;
+        
+        // Configure texture properties in the memo
+        baseTexture.colorSpace = THREE.SRGBColorSpace;
+        baseTexture.mapping = THREE.EquirectangularReflectionMapping;
+        
         if (deviceInfo.isMobile) {
-            const cloned = texture.clone();
-            cloned.minFilter = THREE.LinearFilter;
-            cloned.magFilter = THREE.LinearFilter;
-            cloned.generateMipmaps = false;
-            return cloned;
+            baseTexture.minFilter = THREE.LinearFilter;
+            baseTexture.magFilter = THREE.LinearFilter;
+            baseTexture.generateMipmaps = false;
         }
-        return texture;
+        
+        return baseTexture;
     }, [texture, deviceInfo.isMobile]);
-
-    useLayoutEffect(() => {
-        optimizedTexture.colorSpace = THREE.SRGBColorSpace;
-        optimizedTexture.mapping = THREE.EquirectangularReflectionMapping;
-    }, [optimizedTexture]);
 
     // Apply texture to environment for lighting
     useLayoutEffect(() => {
+        // Scene from useThree is safe to modify in effects
         scene.environment = optimizedTexture;
         return () => {
             scene.environment = null;
         };
-    }, [scene, optimizedTexture]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [optimizedTexture]);
 
     const materialRef = useRef<THREE.MeshBasicMaterial>(null);
 
     useFrame((state, delta) => {
         if (!optimizedTexture || !sphereRef.current) return;
 
-        // Manual Scene Background Cleanup
+        // Manual Scene Background Cleanup (state.scene is safe to modify in useFrame)
         if (state.scene.background) {
             state.scene.background = null;
         }
@@ -54,9 +56,9 @@ export const Background360: React.FC<Background360Props> = () => {
         sphereRef.current.position.set(0, 0, 0);
 
         // Keep environment static
-        if ('environmentRotation' in scene) {
-            // eslint-disable-next-line
-            (scene as any).environmentRotation.y = 0;
+        const sceneWithRotation = scene as typeof scene & { environmentRotation?: { y: number } };
+        if (sceneWithRotation.environmentRotation) {
+            sceneWithRotation.environmentRotation.y = 0;
         }
 
         // Fade In

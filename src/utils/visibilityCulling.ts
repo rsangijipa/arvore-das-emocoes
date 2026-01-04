@@ -53,3 +53,5 @@ export const isWithinRenderDistance = (
     return camera.position.distanceTo(position) <= maxDistance;
 };
 
+
+

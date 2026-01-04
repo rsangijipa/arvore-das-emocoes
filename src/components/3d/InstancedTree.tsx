@@ -203,7 +203,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
 
     // Camera Framing & Grounding
     const groupRef = useRef<THREE.Group>(null);
-    const { camera, controls } = useThree();
+    const { controls } = useThree();
 
     useLayoutEffect(() => {
         if (!groupRef.current || !camera) return;
