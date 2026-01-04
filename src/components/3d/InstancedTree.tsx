@@ -8,6 +8,9 @@ import { useStore } from '../../store/useStore';
 import { RAW_MESSAGES } from '../../data/messages';
 import type { EmotionData } from '../../types';
 import { createRng } from '../../utils/random';
+// LOD utilities available but not actively used yet
+// import { useLODConfig, getLODLevel, getLODSegments } from '../../utils/lod';
+import { isWithinRenderDistance } from '../../utils/visibilityCulling';
 
 interface InstancedTreeProps {
     emotions: EmotionData[];
@@ -27,8 +30,12 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
     const branchMeshRef = useRef<THREE.InstancedMesh>(null);
     const emotionMeshRefs = useRef<(THREE.InstancedMesh | null)[]>([]);
     const haloRef = useRef<THREE.Mesh>(null);
+    const frameSkipRef = useRef(0); // For throttling on mobile
 
     // Global State
+    const deviceInfo = useStore(state => state.deviceInfo);
+    // const lodConfig = useLODConfig(); // Available for future LOD implementation
+    const { camera } = useThree();
     // const setFocusedLeaf = useStore(state => state.setFocusedLeaf); // Destructured above
     // const focusedLeaf = useStore(state => state.focusedLeaf); // Destructured above
 
@@ -36,6 +43,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
     const [hoveredEmotionIndex, setHoveredEmotionIndex] = useState<number | null>(null);
     const [cursorPointer, setCursorPointer] = useState(false);
     const [stage, setStage] = useState(0);
+    const frustumRef = useRef(new THREE.Frustum());
 
     // Sequence
     useEffect(() => {
@@ -70,8 +78,14 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
         leafMaps.forEach((tex) => {
             tex.colorSpace = THREE.SRGBColorSpace;
             tex.flipY = false;
+            // Optimize textures for mobile
+            if (deviceInfo.isMobile) {
+                tex.minFilter = THREE.LinearFilter;
+                tex.magFilter = THREE.LinearFilter;
+                tex.generateMipmaps = false;
+            }
         });
-    }, [leafMaps]);
+    }, [leafMaps, deviceInfo.isMobile]);
 
     // Simple Leaf Alpha Map (Procedural)
     const simpleLeafAlpha = useMemo(() => {
@@ -194,14 +208,14 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
     useLayoutEffect(() => {
         if (!groupRef.current || !camera) return;
 
-        // --- Ground Anchoring Logic ---
+        // --- Tree Positioning: 20% above base in brightest area of background ---
         // 1. Define Ground Plane (Y=0)
         const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
 
         // 2. Define Anchor Point in Normalized Device Coordinates (NDC)
-        // Values derived from user request: x~0.05, y~-0.59
-        const anchorNDC = new THREE.Vector2(0.05, -0.59);
-        const clearanceY = 0.05; // Small lift to prevent z-fighting/clipping
+        // Center-left area (brightest area typically in center of 360 image)
+        // x: slightly left of center, y: 20% above bottom (0.2 from bottom = -0.6 in NDC)
+        const anchorNDC = new THREE.Vector2(-0.15, -0.6);
 
         // 3. Raycast from Camera to Ground
         const raycaster = new THREE.Raycaster();
@@ -212,22 +226,25 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
 
         if (hit) {
             // 4. Calculate Vertical Offset
-            // treeBounds.offsetY is the value needed to bring min.y to 0.
-            // We want the tree's "feet" (min.y) to be at 'targetPoint.y + clearanceY'.
-            // targetPoint.y is 0.
-            // So new Y = 0 + offsetY + clearanceY.
-            const newY = treeBounds.offsetY + clearanceY;
+            // treeBounds.offsetY brings min.y to 0
+            // Add 20% of tree height above base
+            const treeHeight = treeBounds.size.y;
+            const heightOffset = treeHeight * 0.2; // 20% above base
+            const newY = treeBounds.offsetY + heightOffset;
 
             // 5. Apply Position
             groupRef.current.position.set(targetPoint.x, newY, targetPoint.z);
             groupRef.current.updateMatrixWorld();
 
-            console.log(` Tree Anchored: World[${targetPoint.x.toFixed(2)}, ${newY.toFixed(2)}, ${targetPoint.z.toFixed(2)}]`);
+            // Tree anchored at 20% above base in brightest area
+            if (import.meta.env.DEV) {
+                console.log(` Tree Anchored: World[${targetPoint.x.toFixed(2)}, ${newY.toFixed(2)}, ${targetPoint.z.toFixed(2)}] (20% above base)`);
+            }
 
-            // 6. Optional: Focus controls on the tree center without moving camera
+            // 6. Focus controls on the tree center
             if (controls) {
-                // @ts-ignore
-                const orb = controls as any;
+                // @ts-expect-error - OrbitControls has target property but not in types
+                const orb = controls as { target: THREE.Vector3; update: () => void };
                 // Calculate world center of the tree
                 const worldCenter = treeBounds.center.clone().add(groupRef.current.position);
                 // Adjust target so rotation pivots around the tree
@@ -235,8 +252,10 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                 orb.update();
             }
         } else {
-            // Fallback if ray misses ground (e.g. looking at sky)
-            groupRef.current.position.set(0, treeBounds.offsetY, 0);
+            // Fallback if ray misses ground
+            const treeHeight = treeBounds.size.y;
+            const heightOffset = treeHeight * 0.2;
+            groupRef.current.position.set(0, treeBounds.offsetY + heightOffset, 0);
         }
 
     }, [treeBounds, camera, controls]);
@@ -424,12 +443,30 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
 
     useFrame((state, delta) => {
         if (!scalesRef.current || isPaused) return;
+        
+        // Throttle updates on mobile/low-end devices (update every 2-3 frames)
+        if (deviceInfo.isMobile || deviceInfo.isLowEnd) {
+            frameSkipRef.current++;
+            const skipFrames = deviceInfo.isLowEnd ? 3 : 2;
+            if (frameSkipRef.current % skipFrames !== 0) {
+                return; // Skip this frame
+            }
+        }
+        
         const time = state.clock.elapsedTime;
         const dummy = new THREE.Object3D();
 
         let needsUpdateBranch = false;
         let needsUpdateCanopy = false;
         const needsUpdateGroups = [false, false, false, false, false];
+        
+        // Update frustum for culling
+        frustumRef.current.setFromProjectionMatrix(
+            new THREE.Matrix4().multiplyMatrices(
+                camera.projectionMatrix,
+                camera.matrixWorldInverse
+            )
+        );
 
         // 1. Grow Branches (Slower)
         if (stage >= 1 && branchMeshRef.current && branchScalesRef.current) {
@@ -472,6 +509,15 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
         if (stage >= 2) {
             for (let i = 0; i < canopyTransforms.length; i++) {
                 if (time < delays[i] + 4.0) continue;
+                
+                dummy.matrix.copy(canopyTransforms[i]);
+                dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+                
+                // Visibility culling: skip if too far or outside frustum
+                if (deviceInfo.isMobile && !isWithinRenderDistance(dummy.position, camera, 100)) {
+                    continue;
+                }
+                
                 const target = targetScales[i];
                 const current = scalesRef.current[i];
                 let scale = current;
@@ -481,8 +527,6 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                     needsUpdateCanopy = true;
                 }
 
-                dummy.matrix.copy(canopyTransforms[i]);
-                dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
                 dummy.scale.setScalar(scale);
 
                 const phase = dummy.position.x * 0.4 + dummy.position.z * 0.2 + i * 0.1;
@@ -517,6 +561,14 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                     }
 
                     if (time < delays[scaleIdx] + 4.5) return;
+                    
+                    dummy.matrix.copy(mat);
+                    dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+                    
+                    // Visibility culling: skip if too far (only on mobile for performance)
+                    if (deviceInfo.isMobile && !isWithinRenderDistance(dummy.position, camera, 100)) {
+                        return;
+                    }
 
                     const target = targetScales[scaleIdx];
                     const current = scalesRef.current![scaleIdx];
@@ -528,8 +580,6 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                         needsUpdateGroups[gIdx] = true;
                     }
 
-                    dummy.matrix.copy(mat);
-                    dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
                     dummy.scale.setScalar(scale);
 
                     const phase = dummy.position.x * 0.4 + dummy.position.z * 0.2 + originalIdx * 0.1;
@@ -547,7 +597,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
             // DEBUG: Check first instance matrix
             const testMat = new THREE.Matrix4();
             canopyMeshRef.current.getMatrixAt(0, testMat);
-            if (testMat.elements.some(e => isNaN(e))) {
+            if (import.meta.env.DEV && testMat.elements.some(e => isNaN(e))) {
                 console.error('DEBUG: NaN detected in canopy instance 0');
             }
             canopyMeshRef.current.instanceMatrix.needsUpdate = true;
@@ -620,21 +670,18 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                     onLeafHover(emotion, e.clientX, e.clientY);
                 }
             } else {
-                // CLICK HANDLER
+                // CLICK HANDLER - Smooth physics-based interaction
                 if (interactionLock) return;
 
                 // 1. Lock Interaction
                 setInteractionLock(true);
-                setTimeout(() => setInteractionLock(false), 500); // 500ms debounce
+                setTimeout(() => setInteractionLock(false), 800); // Longer debounce for smooth animation
 
-                // 2. Select Message (Random for now, or based on emotion?)
-                // User requirement: "mensagem aleatória do array local"
-                // Let's use a simple RNG based on time or random to ensure variety
+                // 2. Select Message (Random for variety)
                 const msgIdx = Math.floor(Math.random() * RAW_MESSAGES.length);
                 const selectedMsg = RAW_MESSAGES[msgIdx];
-                setSelectedMessage(selectedMsg);
-
-                // 3. Capture World Matrix
+                
+                // 3. Capture World Matrix with smooth transition
                 if (emotionMeshRefs.current[gIdx]) {
                     const dummy = new THREE.Object3D();
                     emotionMeshRefs.current[gIdx]!.getMatrixAt(instanceId, dummy.matrix);
@@ -645,17 +692,22 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                         worldMatrix.premultiply(groupRef.current.matrixWorld);
                     }
 
-                    // 4. Set Focused Leaf (Triggers Hero Animation)
+                    // 4. Set Focused Leaf first (triggers HeroLeaf animation)
                     setFocusedLeaf({
                         id: emotion.id,
                         textureIndex: gIdx,
                         instanceId: instanceId,
                         matrix: worldMatrix
                     });
+
+                    // 5. Delay message card appearance for smooth transition
+                    // Wait for leaf animation to start (200ms)
+                    setTimeout(() => {
+                        setSelectedMessage(selectedMsg);
+                    }, 200);
                 }
 
                 soundManager.playClick();
-                // onLeafClick(emotion); // Disabled to use new cinematic flow
             }
         }
     };
@@ -663,8 +715,14 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
     return (
         <group ref={groupRef}>
             {/* Branches */}
-            <instancedMesh ref={branchMeshRef} args={[undefined, undefined, branchTransforms.length]} castShadow receiveShadow>
-                <cylinderGeometry args={[0.3, 0.4, 1, 5]} />
+            <instancedMesh 
+                ref={branchMeshRef} 
+                args={[undefined, undefined, branchTransforms.length]} 
+                castShadow={!deviceInfo.isMobile} 
+                receiveShadow={!deviceInfo.isMobile}
+                frustumCulled={true}
+            >
+                <cylinderGeometry args={[0.3, 0.4, 1, deviceInfo.isMobile ? 4 : 5]} />
                 <meshStandardMaterial color="#3E3228" roughness={0.9} />
             </instancedMesh>
 
@@ -672,9 +730,10 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
             <instancedMesh
                 ref={canopyMeshRef}
                 args={[canopyGeometry, undefined, canopyTransforms.length]}
-                castShadow
-                receiveShadow
+                castShadow={!deviceInfo.isMobile}
+                receiveShadow={!deviceInfo.isMobile}
                 visible={stage >= 2}
+                frustumCulled={true}
             >
                 {canopyMaterial}
             </instancedMesh>
@@ -685,8 +744,10 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                     key={`em-group-${i}`}
                     ref={el => emotionMeshRefs.current[i] = el}
                     args={[glbGeometry, undefined, group.transforms.length]}
-                    castShadow receiveShadow
+                    castShadow={!deviceInfo.isMobile}
+                    receiveShadow={!deviceInfo.isMobile}
                     visible={stage >= 3}
+                    frustumCulled={true}
                     onPointerMove={(e) => handlePointerAction(e, 'hover')}
                     onPointerOut={() => { setCursorPointer(false); setHoveredEmotionIndex(null); onLeafHover(null, 0, 0); }}
                     onClick={(e) => handlePointerAction(e, 'click')}
@@ -700,7 +761,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                         transparent
                         alphaTest={0.5}
                         emissive="#ffffff"
-                        emissiveIntensity={0.2}
+                        emissiveIntensity={deviceInfo.isMobile ? 0.1 : 0.2}
                     />
                 </instancedMesh>
             ))}

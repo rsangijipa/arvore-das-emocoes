@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { EmotionData } from '../types';
 import * as THREE from 'three';
+import { detectDevice } from '../utils/deviceDetection';
 
 export interface FocusedLeafData {
     id: string; // emotion id if available, or generated
@@ -25,6 +26,7 @@ interface AppState {
     isPaused: boolean;
     resetCameraTrigger: number;
     activeTab: 'home' | 'gallery' | 'explore';
+    deviceInfo: ReturnType<typeof detectDevice>;
 
     setSeed: (seed: number) => void;
     regenerateSeed: () => void;
@@ -49,17 +51,21 @@ interface AppState {
     setInteractionLock: (locked: boolean) => void;
 }
 
+// Initialize with device detection
+const deviceInfo = detectDevice();
+
 export const useStore = create<AppState>((set) => ({
     seed: 12345,
-    quality: 'Balanced',
+    quality: deviceInfo.recommendedQuality, // Auto-set based on device
     emotions: [],
     focusedEmotion: null,
     isCinematic: false,
-    reduceMotion: false,
-    windLevel: 'Calm',
+    reduceMotion: deviceInfo.isMobile || deviceInfo.isLowEnd, // Auto-enable on mobile/low-end
+    windLevel: deviceInfo.isMobile ? 'Off' : 'Calm', // Disable wind on mobile by default
     isPaused: false,
     resetCameraTrigger: 0,
     activeTab: 'home',
+    deviceInfo,
 
     setSeed: (seed) => set({ seed }),
     regenerateSeed: () => set({ seed: Math.random() * 10000 }),

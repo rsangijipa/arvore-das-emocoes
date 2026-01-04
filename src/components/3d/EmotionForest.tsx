@@ -1,4 +1,4 @@
-import React, { Suspense, useState } from 'react';
+import React, { Suspense, useState, lazy } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment, PerspectiveCamera, AdaptiveDpr, Loader, Html } from '@react-three/drei';
 import { motion } from "framer-motion";
@@ -7,7 +7,6 @@ import { InstancedTree } from './InstancedTree';
 import { HeroLeaf } from './HeroLeaf';
 import { CameraRig } from './CameraRig';
 import { Background360 } from '../scene/Background360';
-import { LightParticles } from './LightParticles';
 import { UIOverlay } from '../ui/UIOverlay';
 import { BottomNav } from '../ui/BottomNav';
 import { LeafQuoteOverlay } from '../ui/LeafQuoteOverlay';
@@ -17,6 +16,9 @@ import { ArrowLeft } from 'lucide-react';
 import type { EmotionData } from '../../types';
 import { useStore } from '../../store/useStore';
 import { MessageCard } from '../ui/MessageCard';
+
+// Lazy load heavy components for better code splitting
+const LightParticles = lazy(() => import('./LightParticles').then(module => ({ default: module.LightParticles })));
 
 
 
@@ -33,6 +35,7 @@ export const EmotionForest: React.FC = () => {
     const activeTab = useStore(state => state.activeTab);
     const windLevel = useStore(state => state.windLevel);
     const isPaused = useStore(state => state.isPaused);
+    const deviceInfo = useStore(state => state.deviceInfo);
     const [tooltip, setTooltip] = useState<{ text: string; x: number; y: number } | null>(null);
 
     const handleLeafHover = React.useCallback((emotion: EmotionData | null, x: number, y: number) => {
@@ -72,9 +75,17 @@ export const EmotionForest: React.FC = () => {
                 <div className={`absolute inset-0 z-0 transition-all duration-1000 ${isCinematic ? 'blur-sm brightness-50' : ''} ${activeTab === 'explore' ? 'opacity-80' : 'opacity-100'}`}>
                     <ErrorBoundary fallback={<ListView emotions={emotions} onLeafClick={handleLeafClickInternal} />}>
                         <Canvas
-                            shadows
-                            dpr={quality === 'Low' ? 1 : [1, 2]}
-                            gl={{ antialias: quality === 'High', toneMapping: 3 }}
+                            shadows={quality !== 'Low' && !deviceInfo.isMobile}
+                            dpr={quality === 'Low' || deviceInfo.isMobile ? 1 : [1, Math.min(deviceInfo.pixelRatio, 2)]}
+                            gl={{ 
+                                antialias: quality === 'High' && !deviceInfo.isMobile, 
+                                toneMapping: 3,
+                                powerPreference: deviceInfo.isLowEnd ? 'low-power' : 'high-performance',
+                                stencil: false, // Disable stencil buffer on mobile
+                                depth: true,
+                                alpha: false, // Opaque background for better performance
+                            }}
+                            performance={{ min: 0.5 }} // Lower target FPS on mobile
                             style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
                         >
                             <PerspectiveCamera makeDefault position={[0, 20, 70]} fov={45} />
@@ -88,8 +99,10 @@ export const EmotionForest: React.FC = () => {
                             <directionalLight
                                 position={[20, 50, 20]}
                                 intensity={1.5}
-                                castShadow
-                                shadow-mapSize={[1024, 1024]}
+                                castShadow={quality !== 'Low' && !deviceInfo.isMobile}
+                                shadow-mapSize={deviceInfo.isMobile ? [512, 512] : [1024, 1024]}
+                                shadow-bias={-0.0001}
+                                shadow-radius={deviceInfo.isMobile ? 2 : 4}
                                 color="#e9ce98"
                             />
                             <hemisphereLight intensity={0.4} color="#cea86c" groundColor="#22190c" />
@@ -127,7 +140,11 @@ export const EmotionForest: React.FC = () => {
                                 <CameraRig
                                     targetPosition={undefined}
                                 />
-                                {quality !== 'Low' && <LightParticles />}
+                                {quality !== 'Low' && !deviceInfo.isLowEnd && (
+                                    <Suspense fallback={null}>
+                                        <LightParticles />
+                                    </Suspense>
+                                )}
                                 {/* Disable Effects when cinematic to prevent WebGL context conflicts */}
                                 {/* TEMPORARILY DISABLED FOR DEBUGGING */}
                                 {/* {!isCinematic && <Effects quality={quality} isCinematic={isCinematic || activeTab !== 'home'} />} */}
@@ -200,7 +217,9 @@ if (typeof window !== 'undefined') {
                 soundManager.resume();
                 (window as any)._audioUnlocked = true;
             } catch (e) {
-                console.warn("Audio unlock failed", e);
+                if (import.meta.env.DEV) {
+                    console.warn("Audio unlock failed", e);
+                }
             }
         });
 

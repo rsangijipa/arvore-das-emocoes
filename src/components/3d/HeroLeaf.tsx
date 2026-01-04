@@ -51,12 +51,14 @@ export const HeroLeaf: React.FC = () => {
     useLayoutEffect(() => {
         if (meshRef.current && focusedLeaf) {
             const tex = textures[focusedLeaf.textureIndex] || textures[0];
-            tex.colorSpace = THREE.SRGBColorSpace;
-            tex.flipY = false; // Match standard GLB orientation if needed
+            // Clone texture to avoid modifying hook return value
+            const textureClone = tex.clone();
+            textureClone.colorSpace = THREE.SRGBColorSpace;
+            textureClone.flipY = false; // Match standard GLB orientation if needed
 
             // Apply to material
             if (meshRef.current.material instanceof THREE.MeshStandardMaterial) {
-                meshRef.current.material.map = tex;
+                meshRef.current.material.map = textureClone;
                 meshRef.current.material.needsUpdate = true;
             }
         }
@@ -65,9 +67,12 @@ export const HeroLeaf: React.FC = () => {
     useFrame((_, delta) => {
         if (!focusedLeaf || !meshRef.current) return;
 
+        // Smooth animation with easing
+        const animationSpeed = 3.5 * delta; // Slightly slower for smoother feel
+        const scaleSpeed = 3.0 * delta;
+
         // Target Position Calculation (Screen Space -> World Space)
-        // We want it ~40% left (-0.2 NDC X?)
-        // Let's aim for NDC: x = -0.25, y = 0
+        // Position on left side of screen for message card visibility
         const targetNDC = new THREE.Vector3(-0.25, -0.10, 0.5);
 
         // Unproject to world
@@ -76,31 +81,46 @@ export const HeroLeaf: React.FC = () => {
         const distance = 2.0; // Fixed key distance
         const targetPos = camera.position.clone().add(dir.multiplyScalar(distance));
 
-        // Target Rotation (Face camera nicely)
+        // Target Rotation (Face camera nicely with gentle tilt)
         const targetQuat = camera.quaternion.clone();
-        // Maybe tilt it a bit
-        const tilt = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.5, 0, 0.2));
+        const tilt = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.4, 0, 0.15));
         targetQuat.multiply(tilt);
 
-        // Animation (Lerp)
-        const speed = 4.0 * delta;
-        meshRef.current.position.lerp(targetPos, speed);
-        meshRef.current.quaternion.slerp(targetQuat, speed);
-        meshRef.current.scale.lerp(new THREE.Vector3(0.5, 0.5, 0.5), speed); // Scale up/down to be consistent size
+        // Smooth position animation with easing
+        const currentPos = meshRef.current.position;
+        const posDiff = targetPos.clone().sub(currentPos);
+        const easedSpeed = 1 - Math.pow(1 - animationSpeed, 3); // Ease-out cubic
+        currentPos.add(posDiff.multiplyScalar(easedSpeed));
+        meshRef.current.position.copy(currentPos);
+
+        // Smooth rotation
+        meshRef.current.quaternion.slerp(targetQuat, animationSpeed);
+
+        // Smooth scale animation
+        const targetScale = new THREE.Vector3(0.5, 0.5, 0.5);
+        const currentScale = meshRef.current.scale;
+        const scaleDiff = targetScale.clone().sub(currentScale);
+        const easedScaleSpeed = 1 - Math.pow(1 - scaleSpeed, 3);
+        currentScale.add(scaleDiff.multiplyScalar(easedScaleSpeed));
+        meshRef.current.scale.copy(currentScale);
     });
 
     useLayoutEffect(() => {
         if (focusedLeaf && meshRef.current) {
-            // Set initial state to match the instance
+            // Set initial state to match the instance with smooth transition
             const mat = focusedLeaf.matrix;
             const pos = new THREE.Vector3();
             const quat = new THREE.Quaternion();
             const scale = new THREE.Vector3();
             mat.decompose(pos, quat, scale);
 
+            // Start from original position for smooth animation
             meshRef.current.position.copy(pos);
             meshRef.current.quaternion.copy(quat);
             meshRef.current.scale.copy(scale);
+            
+            // Small initial scale boost for visual feedback
+            meshRef.current.scale.multiplyScalar(1.1);
         }
     }, [focusedLeaf]);
 

@@ -6,8 +6,8 @@ import { createRng } from '../../utils/random';
 
 export const LightParticles: React.FC = () => {
     const meshRef = useRef<THREE.InstancedMesh>(null);
-    const count = 600;
-    const { seed } = useStore();
+    const { seed, deviceInfo } = useStore();
+    const count = deviceInfo.recommendedParticleCount; // Dynamic based on device
 
     // Fix Bug #4: Deterministic RNG
     const randomFor = useMemo(() => createRng(seed * 4421), [seed]);

@@ -1,4 +1,4 @@
-import React, { useRef, useLayoutEffect } from 'react';
+import React, { useRef, useLayoutEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { useLoader, useFrame, useThree } from '@react-three/fiber';
 import { useStore } from '../../store/useStore';
@@ -8,52 +8,55 @@ interface Background360Props {
     showSphereFallback?: boolean;
 }
 
-export const Background360: React.FC<Background360Props> = ({
-    rotationSpeed = 0.015,
-}) => {
+export const Background360: React.FC<Background360Props> = () => {
     const texture = useLoader(THREE.TextureLoader, '/fundo.jpeg');
-    const { isCinematic } = useStore();
+    const { deviceInfo } = useStore();
     const sphereRef = useRef<THREE.Mesh>(null);
     const { scene } = useThree();
+    
+    // Optimize texture for mobile (clone to avoid modifying hook return)
+    const optimizedTexture = React.useMemo(() => {
+        if (deviceInfo.isMobile) {
+            const cloned = texture.clone();
+            cloned.minFilter = THREE.LinearFilter;
+            cloned.magFilter = THREE.LinearFilter;
+            cloned.generateMipmaps = false;
+            return cloned;
+        }
+        return texture;
+    }, [texture, deviceInfo.isMobile]);
 
     useLayoutEffect(() => {
-        // eslint-disable-next-line
-        texture.colorSpace = THREE.SRGBColorSpace;
-        // eslint-disable-next-line
-        texture.mapping = THREE.EquirectangularReflectionMapping;
-    }, [texture]);
+        optimizedTexture.colorSpace = THREE.SRGBColorSpace;
+        optimizedTexture.mapping = THREE.EquirectangularReflectionMapping;
+    }, [optimizedTexture]);
 
     // Apply texture to environment for lighting
     useLayoutEffect(() => {
-        // eslint-disable-next-line
-        scene.environment = texture;
+        scene.environment = optimizedTexture;
         return () => {
-            // eslint-disable-next-line
             scene.environment = null;
         };
-    }, [scene, texture]);
+    }, [scene, optimizedTexture]);
 
     const materialRef = useRef<THREE.MeshBasicMaterial>(null);
 
     useFrame((state, delta) => {
-        if (!texture || !sphereRef.current) return;
+        if (!optimizedTexture || !sphereRef.current) return;
 
         // Manual Scene Background Cleanup
         if (state.scene.background) {
             state.scene.background = null;
         }
 
-        const t = state.clock.elapsedTime;
-        const currentSpeed = isCinematic ? rotationSpeed * 0.5 : rotationSpeed;
-        const rotation = t * currentSpeed;
-
-        sphereRef.current.rotation.y = rotation;
+        // Static background - no rotation
+        sphereRef.current.rotation.y = 0;
         sphereRef.current.position.set(0, 0, 0);
 
-        // Rotate environment
+        // Keep environment static
         if ('environmentRotation' in scene) {
             // eslint-disable-next-line
-            (scene as any).environmentRotation.y = rotation;
+            (scene as any).environmentRotation.y = 0;
         }
 
         // Fade In
@@ -62,12 +65,16 @@ export const Background360: React.FC<Background360Props> = ({
         }
     });
 
+    // Use optimized geometry based on device
+    const segments = deviceInfo.recommendedBackgroundSegments;
+    const rings = Math.floor(segments * 0.67); // Maintain aspect ratio
+    
     return (
         <mesh ref={sphereRef} scale={[-1, 1, 1]}>
-            <sphereGeometry args={[500, 60, 40]} />
+            <sphereGeometry args={[500, segments, rings]} />
             <meshBasicMaterial
                 ref={materialRef}
-                map={texture}
+                map={optimizedTexture}
                 side={THREE.BackSide}
                 toneMapped={false}
                 fog={false}

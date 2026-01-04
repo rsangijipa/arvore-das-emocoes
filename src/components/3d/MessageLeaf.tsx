@@ -21,10 +21,12 @@ export const MessageLeaf: React.FC<MessageLeafProps> = ({ emotion }) => {
     const gltf = useGLTF('/folha.glb');
     const { scene } = gltf;
 
-    // Debug
+    // Debug (only in development)
     useEffect(() => {
-        if (scene) console.log('MessageLeaf: GLB Loaded', scene);
-        else console.warn('MessageLeaf: GLB Failed to Load');
+        if (import.meta.env.DEV) {
+            if (scene) console.log('MessageLeaf: GLB Loaded', scene);
+            else console.warn('MessageLeaf: GLB Failed to Load');
+        }
     }, [scene]);
 
     const groupRef = useRef<THREE.Group>(null);

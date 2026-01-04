@@ -24,13 +24,19 @@ export const MessageCard: React.FC = () => {
     };
 
     return (
-        <AnimatePresence>
+        <AnimatePresence mode="wait">
             {focusedLeaf && (
                 <motion.div
-                    initial={{ opacity: 0, x: 50 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: 50 }}
-                    transition={{ type: "spring", damping: 25, stiffness: 300 }}
+                    initial={{ opacity: 0, x: 100, scale: 0.9 }}
+                    animate={{ opacity: 1, x: 0, scale: 1 }}
+                    exit={{ opacity: 0, x: 100, scale: 0.9 }}
+                    transition={{ 
+                        type: "spring", 
+                        damping: 30, 
+                        stiffness: 400,
+                        mass: 0.8,
+                        delay: 0.2 // Wait for leaf animation to start
+                    }}
                     className="fixed z-50 pointer-events-none flex items-center justify-end"
                     style={{
                         top: 0,
@@ -64,16 +70,26 @@ export const MessageCard: React.FC = () => {
                         </div>
 
                         {/* Content */}
-                        <div className="space-y-4">
+                        <motion.div 
+                            className="space-y-4"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.4, duration: 0.5 }}
+                        >
                             <h2 className="text-2xl md:text-3xl font-serif leading-tight">
                                 "{message.text}"
                             </h2>
                             {message.author && (
-                                <p className="text-sm font-medium tracking-widest opacity-60 uppercase">
+                                <motion.p 
+                                    className="text-sm font-medium tracking-widest opacity-60 uppercase"
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 0.6 }}
+                                    transition={{ delay: 0.6, duration: 0.4 }}
+                                >
                                     — {message.author}
-                                </p>
+                                </motion.p>
                             )}
-                        </div>
+                        </motion.div>
 
                         {/* Footer / Action */}
                         <div className="mt-auto pt-8">
