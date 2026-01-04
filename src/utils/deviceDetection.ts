@@ -30,7 +30,8 @@ export const detectDevice = (): DeviceInfo => {
         };
     }
 
-    const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
+    const windowWithOpera = window as typeof window & { opera?: string };
+    const userAgent = navigator.userAgent || navigator.vendor || windowWithOpera.opera || '';
     const isMobileUA = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(userAgent.toLowerCase());
     
     const width = window.innerWidth;
@@ -46,7 +47,8 @@ export const detectDevice = (): DeviceInfo => {
 
     // Low-end device detection (heuristic)
     const hardwareConcurrency = navigator.hardwareConcurrency || 4;
-    const deviceMemory = (navigator as any).deviceMemory || 4; // GB
+    const navigatorWithMemory = navigator as typeof navigator & { deviceMemory?: number };
+    const deviceMemory = navigatorWithMemory.deviceMemory || 4; // GB
     const isLowEnd = hardwareConcurrency <= 4 || deviceMemory <= 2 || pixelRatio > 2;
 
     // Quality recommendations
@@ -96,13 +98,14 @@ export const useDeviceInfo = (): DeviceInfo => {
     }
 
     // Use a simple state to cache the detection
-    const cached = (window as any).__deviceInfo as DeviceInfo | undefined;
+    const windowWithCache = window as typeof window & { __deviceInfo?: DeviceInfo };
+    const cached = windowWithCache.__deviceInfo;
     if (cached) {
         return cached;
     }
 
     const info = detectDevice();
-    (window as any).__deviceInfo = info;
+    windowWithCache.__deviceInfo = info;
     return info;
 };
 

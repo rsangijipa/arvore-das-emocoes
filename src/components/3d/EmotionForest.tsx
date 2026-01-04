@@ -210,12 +210,13 @@ export const EmotionForest: React.FC = () => {
 if (typeof window !== 'undefined') {
     const unlockAudio = () => {
         // Use a flag to prevent multiple calls
-        if ((window as any)._audioUnlocked) return;
+        const windowWithFlag = window as typeof window & { _audioUnlocked?: boolean };
+        if (windowWithFlag._audioUnlocked) return;
 
         import('../../utils/SoundManager').then(({ soundManager }) => {
             try {
                 soundManager.resume();
-                (window as any)._audioUnlocked = true;
+                windowWithFlag._audioUnlocked = true;
             } catch (e) {
                 if (import.meta.env.DEV) {
                     console.warn("Audio unlock failed", e);
