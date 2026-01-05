@@ -77,8 +77,8 @@ export const EmotionForest: React.FC = () => {
                         <Canvas
                             shadows={quality !== 'Low' && !deviceInfo.isMobile}
                             dpr={quality === 'Low' || deviceInfo.isMobile ? 1 : [1, Math.min(deviceInfo.pixelRatio, 2)]}
-                            gl={{ 
-                                antialias: quality === 'High' && !deviceInfo.isMobile, 
+                            gl={{
+                                antialias: quality === 'High' && !deviceInfo.isMobile,
                                 toneMapping: 3,
                                 powerPreference: deviceInfo.isLowEnd ? 'low-power' : 'high-performance',
                                 stencil: false, // Disable stencil buffer on mobile
@@ -92,8 +92,8 @@ export const EmotionForest: React.FC = () => {
 
                             <AdaptiveDpr />
 
-                            <Background360 showSphereFallback={quality === 'Low'} />
-                            <Environment preset="forest" />
+                            {/* <Background360 showSphereFallback={quality === 'Low'} /> */}
+                            {/* <Environment preset="forest" /> */}
 
                             {/* Magical Lighting */}
                             <directionalLight

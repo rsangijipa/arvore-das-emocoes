@@ -41,8 +41,8 @@ export const generateProceduralTree = (seed: number): TreeData => {
     // Trunk: Short (2.5) to Tall (5.0)
     const TRUNK_LENGTH = 2.5 + (rng() * 2.5);
 
-    // Depth: 7 to 9
-    const MAX_DEPTH = 7 + Math.floor(rng() * 2.5);
+    // Depth: 5
+    const MAX_DEPTH = 5;
 
     // Trifurcated Chance (for Mixed style)
     const TRIFURCATION_CHANCE = style === 1 ? (0.2 + rng() * 0.6) : 0;

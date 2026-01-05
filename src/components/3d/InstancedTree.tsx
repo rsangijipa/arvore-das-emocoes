@@ -12,6 +12,8 @@ import { createRng } from '../../utils/random';
 // import { useLODConfig, getLODLevel, getLODSegments } from '../../utils/lod';
 import { isWithinRenderDistance } from '../../utils/visibilityCulling';
 
+// --- SHADER HELPERS REMOVED FOR STABILITY ---
+
 interface InstancedTreeProps {
     emotions: EmotionData[];
     //    onLeafClick: (emotion: EmotionData) => void;
@@ -31,6 +33,8 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
     const emotionMeshRefs = useRef<(THREE.InstancedMesh | null)[]>([]);
     const haloRef = useRef<THREE.Mesh>(null);
     const frameSkipRef = useRef(0); // For throttling on mobile
+
+    // Shader Uniform Refs REMOVED
 
     // Global State
     const deviceInfo = useStore(state => state.deviceInfo);
@@ -152,6 +156,10 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
             alphaTest={0.5}
             depthWrite={false}
             side={THREE.DoubleSide}
+        // onBeforeCompile={(shader) => {
+        //     patchWindShader(shader);
+        //     canopyShaderRef.current = shader;
+        // }}
         />
     ), [simpleLeafAlpha]);
 
@@ -384,8 +392,8 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
         return { delays: d, targetScales: t };
     }, [canopyTransforms.length, activeEmotionCount, combinedCount, seed, emotions]);
 
-    useEffect(() => {
-        scalesRef.current = new Float32Array(combinedCount).fill(0.0001);
+    useLayoutEffect(() => {
+        scalesRef.current = new Float32Array(combinedCount).fill(1.0);
     }, [combinedCount]);
 
     // Initial Layout - Set Colors/Matrices
@@ -397,7 +405,8 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
             canopyTransforms.forEach((mat, i) => {
                 dummy.matrix.copy(mat);
                 dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-                dummy.scale.setScalar(0.0001);
+                dummy.scale.setScalar(1.0); // Start Full Size
+                scalesRef.current![i] = 1.0;
                 dummy.updateMatrix();
                 canopyMeshRef.current!.setMatrixAt(i, dummy.matrix);
 
@@ -423,7 +432,8 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                 group.transforms.forEach((mat, i) => {
                     dummy.matrix.copy(mat);
                     dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-                    dummy.scale.setScalar(0.0001);
+                    dummy.scale.setScalar(1.0); // Start Full Size
+                    // scalesRef.current![scaleIdx] = 1.0; 
                     dummy.updateMatrix();
                     mesh.setMatrixAt(i, dummy.matrix);
 
@@ -443,7 +453,9 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
 
     useFrame((state, delta) => {
         if (!scalesRef.current || isPaused) return;
-        
+
+
+
         // Throttle updates on mobile/low-end devices (update every 2-3 frames)
         if (deviceInfo.isMobile || deviceInfo.isLowEnd) {
             frameSkipRef.current++;
@@ -452,14 +464,14 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                 return; // Skip this frame
             }
         }
-        
+
         const time = state.clock.elapsedTime;
         const dummy = new THREE.Object3D();
 
         let needsUpdateBranch = false;
         let needsUpdateCanopy = false;
         const needsUpdateGroups = [false, false, false, false, false];
-        
+
         // Update frustum for culling
         frustumRef.current.setFromProjectionMatrix(
             new THREE.Matrix4().multiplyMatrices(
@@ -505,30 +517,50 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
         if (windLevel === 'Breezy') { windSpeed = 1.4; windAmp = 0.015; }
         if (reduceMotion) { windSpeed *= 0.1; windAmp *= 0.4; }
 
+        // Update Shader Uniforms
+        if (canopyShaderRef.current) {
+            canopyShaderRef.current.uniforms.uTime.value = time;
+            canopyShaderRef.current.uniforms.uWindParams.value.set(windSpeed, windAmp);
+        }
+        emotionShaderRefs.current.forEach(shader => {
+            if (shader) {
+                shader.uniforms.uTime.value = time;
+                shader.uniforms.uWindParams.value.set(windSpeed, windAmp);
+            }
+        });
+
         // 2. Canopy
         if (stage >= 2) {
             for (let i = 0; i < canopyTransforms.length; i++) {
+                // Optimization: If growth full, skip updating matrix (Wind is on GPU now)
+                const current = scalesRef.current[i];
+                const target = targetScales[i];
+
+                // Only update if not fully grown OR if we need to check visibility (though culling should ideally be separate)
+                // For simplicity and perf: Only update during growth
+                if (current >= target) continue;
+
                 if (time < delays[i] + 4.0) continue;
-                
+
                 dummy.matrix.copy(canopyTransforms[i]);
                 dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-                
+
                 // Visibility culling: skip if too far or outside frustum
+                // Note: We only cull updates here. If it's static, it renders.
+                // GPU Frustum culling handles rendering.
                 if (deviceInfo.isMobile && !isWithinRenderDistance(dummy.position, camera, 100)) {
                     continue;
                 }
-                
-                const target = targetScales[i];
-                const current = scalesRef.current[i];
+
                 let scale = current;
-                if (current < target) {
-                    scale = Math.min(target, current + delta * 1.5);
-                    scalesRef.current[i] = scale;
-                    needsUpdateCanopy = true;
-                }
+                // Growth Logic
+                scale = Math.min(target, current + delta * 1.5);
+                scalesRef.current[i] = scale;
+                needsUpdateCanopy = true;
 
                 dummy.scale.setScalar(scale);
 
+                // Wind Rotation
                 const phase = dummy.position.x * 0.4 + dummy.position.z * 0.2 + i * 0.1;
                 dummy.rotation.x += Math.sin(time * windSpeed + phase) * windAmp;
                 dummy.rotation.z += Math.cos(time * windSpeed * 0.8 + phase) * windAmp;
@@ -550,28 +582,43 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                     const scaleIdx = offset + originalIdx;
 
                     // IF THIS IS THE FOCUSED LEAF, FORCE SCALE 0 (Hide it, HeroLeaf takes over)
-                    if (focusedLeaf && focusedLeaf.textureIndex === gIdx && focusedLeaf.instanceId === i) {
+                    const isFocused = focusedLeaf && focusedLeaf.textureIndex === gIdx && focusedLeaf.instanceId === i;
+
+                    if (isFocused) {
                         dummy.matrix.copy(mat);
                         dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+
+                        // Only update if not already 0
+                        // Since we can't easily check current matrix scale without getMatrixAt, we just force update if focused
+                        // Optimized: check a flag or just do it. Doing it for 1 leaf is fine.
                         dummy.scale.set(0, 0, 0);
                         dummy.updateMatrix();
                         mesh.setMatrixAt(i, dummy.matrix);
                         needsUpdateGroups[gIdx] = true;
-                        return; // Skip wind/growth for this frame
+                        return;
                     }
 
+                    // IF we just unfocused, we need to restore it. 
+                    // This creates a need to track state. For now, the loop below restores it if scale < target.
+                    // But if scale == target, we don't enter the loop.
+                    // The 'scalesRef' holds the target visual scale (growth).
+
+                    // Optimization: Check growth
+                    const current = scalesRef.current![scaleIdx];
+                    const target = targetScales[scaleIdx];
+
+                    // If grown and not focused, still update for wind
+                    // if (current >= target) return;
+
                     if (time < delays[scaleIdx] + 4.5) return;
-                    
+
                     dummy.matrix.copy(mat);
                     dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-                    
-                    // Visibility culling: skip if too far (only on mobile for performance)
+
                     if (deviceInfo.isMobile && !isWithinRenderDistance(dummy.position, camera, 100)) {
                         return;
                     }
 
-                    const target = targetScales[scaleIdx];
-                    const current = scalesRef.current![scaleIdx];
                     let scale = current;
 
                     if (current < target) {
@@ -582,6 +629,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
 
                     dummy.scale.setScalar(scale);
 
+                    // Wind Rotation
                     const phase = dummy.position.x * 0.4 + dummy.position.z * 0.2 + originalIdx * 0.1;
                     dummy.rotation.x += Math.sin(time * windSpeed + phase) * windAmp * 1.2;
                     dummy.rotation.z += Math.cos(time * windSpeed * 0.8 + phase) * windAmp * 1.2;
@@ -680,7 +728,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                 // 2. Select Message (Random for variety)
                 const msgIdx = Math.floor(Math.random() * RAW_MESSAGES.length);
                 const selectedMsg = RAW_MESSAGES[msgIdx];
-                
+
                 // 3. Capture World Matrix with smooth transition
                 if (emotionMeshRefs.current[gIdx]) {
                     const dummy = new THREE.Object3D();
@@ -712,13 +760,15 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
         }
     };
 
+
+
     return (
         <group ref={groupRef}>
             {/* Branches */}
-            <instancedMesh 
-                ref={branchMeshRef} 
-                args={[undefined, undefined, branchTransforms.length]} 
-                castShadow={!deviceInfo.isMobile} 
+            <instancedMesh
+                ref={branchMeshRef}
+                args={[undefined, undefined, branchTransforms.length]}
+                castShadow={!deviceInfo.isMobile}
                 receiveShadow={!deviceInfo.isMobile}
                 frustumCulled={true}
             >
@@ -732,7 +782,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                 args={[canopyGeometry, undefined, canopyTransforms.length]}
                 castShadow={!deviceInfo.isMobile}
                 receiveShadow={!deviceInfo.isMobile}
-                visible={stage >= 2}
+                visible={true}
                 frustumCulled={true}
             >
                 {canopyMaterial}
@@ -744,9 +794,10 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                     key={`em-group-${i}`}
                     ref={el => emotionMeshRefs.current[i] = el}
                     args={[glbGeometry, undefined, group.transforms.length]}
+                    // args={[canopyGeometry, undefined, group.transforms.length]}
                     castShadow={!deviceInfo.isMobile}
                     receiveShadow={!deviceInfo.isMobile}
-                    visible={stage >= 3}
+                    visible={true}
                     frustumCulled={true}
                     onPointerMove={(e) => handlePointerAction(e, 'hover')}
                     onPointerOut={() => { setCursorPointer(false); setHoveredEmotionIndex(null); onLeafHover(null, 0, 0); }}
@@ -762,6 +813,10 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                         alphaTest={0.5}
                         emissive="#ffffff"
                         emissiveIntensity={deviceInfo.isMobile ? 0.1 : 0.2}
+                    // onBeforeCompile={(shader) => {
+                    //     patchWindShader(shader);
+                    //     emotionShaderRefs.current[i] = shader;
+                    // }}
                     />
                 </instancedMesh>
             ))}
