@@ -176,8 +176,8 @@ export const EmotionForest: React.FC = () => {
                                         </Suspense>
                                     )}
 
-                                    {/* Effects Component */}
-                                    {!isCinematic && <Effects quality={quality} isCinematic={isCinematic || activeTab !== 'home'} />}
+                                    {/* Effects Component - Only render if enabled (not mobile, not low quality, not cinematic) */}
+                                    {enableEffects && <Effects quality={quality} isCinematic={isCinematic || activeTab !== 'home'} />}
                                 </Suspense>
                             </CanvasErrorBoundary>
                         </Canvas>

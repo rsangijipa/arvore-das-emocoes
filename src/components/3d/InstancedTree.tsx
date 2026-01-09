@@ -170,8 +170,8 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({
         treeData.leafAnchors.forEach((anchorMat) => {
             anchorMat.decompose(tempPos, tempQuat, tempScale);
 
-            // Generate 3 leaves per anchor
-            for (let k = 0; k < 3; k++) {
+            // Generate 5 leaves per anchor for denser look
+            for (let k = 0; k < 5; k++) {
                 dummy.position.copy(tempPos);
                 dummy.quaternion.copy(tempQuat);
                 dummy.scale.setScalar(1.0);
@@ -440,6 +440,9 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({
                         transparent
                         alphaTest={0.5}
                         side={THREE.DoubleSide}
+                        roughness={0.8}
+                        metalness={0.1}
+                        envMapIntensity={0.3}
                         onBeforeCompile={(shader) => {
                             windShaderPatch(shader);
                             materialShaderRefs.current.push(shader);

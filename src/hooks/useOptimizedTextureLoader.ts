@@ -7,13 +7,13 @@ const promises: Record<string, Promise<THREE.Texture> | undefined> = {};
 const errors: Record<string, any> = {};
 
 function read(url: string, isMobile: boolean) {
-    if (cache[url]) {
-        return cache[url];
+    if (cache[url] !== undefined) {
+        return cache[url]!;
     }
-    if (errors[url]) {
+    if (errors[url] !== undefined) {
         throw errors[url];
     }
-    if (promises[url]) {
+    if (promises[url] !== undefined) {
         throw promises[url];
     }
 
@@ -26,6 +26,7 @@ function read(url: string, isMobile: boolean) {
             // Should be handled by loadOptimizedTexture fallback, but just in case
             console.error("Critical error in loader hook", err);
             errors[url] = err;
+            throw err;
         });
 
     promises[url] = promise;
@@ -58,7 +59,7 @@ export const useOptimizedTextureLoader = (urls: string[], isMobile: boolean = fa
     const pending: Promise<THREE.Texture>[] = [];
 
     urls.forEach(url => {
-        if (!promises[url]) {
+        if (promises[url] === undefined) {
             // Start it
             const p = loadOptimizedTexture(url, { isMobile })
                 .then((t) => { cache[url] = t; return t; })
@@ -66,8 +67,8 @@ export const useOptimizedTextureLoader = (urls: string[], isMobile: boolean = fa
             promises[url] = p as Promise<THREE.Texture>;
         }
 
-        if (!cache[url] && promises[url]) {
-            pending.push(promises[url]);
+        if (cache[url] === undefined && promises[url] !== undefined) {
+            pending.push(promises[url]!);
         }
     });
 
@@ -76,5 +77,5 @@ export const useOptimizedTextureLoader = (urls: string[], isMobile: boolean = fa
     }
 
     // If we are here, everything is in cache (or errored, but we handle fallback in loader)
-    return urls.map(url => cache[url]);
+    return urls.map(url => cache[url]!);
 };

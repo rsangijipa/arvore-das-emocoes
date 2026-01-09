@@ -2,6 +2,7 @@ import React, { useRef, useLayoutEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
 import { useOptimizedTextureLoader } from '../../hooks/useOptimizedTextureLoader';
+import { useStore } from '../../store/useStore';
 
 interface Background360Props {
     rotationSpeed?: number;

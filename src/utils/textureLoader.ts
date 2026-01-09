@@ -49,8 +49,8 @@ export const loadOptimizedTexture = (
     options: TextureLoadOptions = {}
 ): Promise<THREE.Texture> => {
     // Check cache first
-    if (textureCache[url]) {
-        return textureCache[url];
+    if (textureCache[url] !== undefined) {
+        return textureCache[url]!;
     }
 
     const {
