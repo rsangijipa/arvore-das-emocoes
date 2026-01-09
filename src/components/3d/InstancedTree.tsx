@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useLayoutEffect } from 'react';
 import * as THREE from 'three';
-import { useFrame, useLoader, type ThreeEvent } from '@react-three/fiber';
+import { useFrame, type ThreeEvent } from '@react-three/fiber';
+import { useOptimizedTextureLoader } from '../../hooks/useOptimizedTextureLoader';
 import { generateProceduralTree } from '../../utils/treeGenerator';
 import { soundManager } from '../../utils/SoundManager';
 import { useStore } from '../../store/useStore';
@@ -10,6 +11,7 @@ import { createRng } from '../../utils/random';
 
 interface InstancedTreeProps {
     emotions: EmotionData[];
+    onLeafClick: (emotion: EmotionData) => void;
     onLeafHover: (emotion: EmotionData | null, x: number, y: number) => void;
     onEmotionsUpdate?: (emotions: EmotionData[]) => void;
     reduceMotion: boolean;
@@ -19,7 +21,9 @@ interface InstancedTreeProps {
     isPaused: boolean;
 }
 
-// GPU Wind Shader Patch
+// -----------------------------------------------------------------------------
+// GPU WIND SHADER
+// -----------------------------------------------------------------------------
 const windShaderPatch = (shader: any) => {
     shader.uniforms.uTime = { value: 0 };
     shader.uniforms.uWindParams = { value: new THREE.Vector2(1.0, 0.1) }; // speed, strength
@@ -35,70 +39,90 @@ const windShaderPatch = (shader: any) => {
         `
         vec3 transformed = vec3( position );
         
-        // Wind Logic
+        // --- WIND LOGIC (GPU) ---
         float windSpeed = uWindParams.x;
         float windStrength = uWindParams.y;
         
-        // Only apply if wind is enabled (strength > 0)
         if (windStrength > 0.001) {
-             // Instance-based randomization (approximate using world position)
-             vec4 worldPos = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
-             float phase = worldPos.x * 0.5 + worldPos.z * 0.3;
+             // Use world position (via instanceMatrix) to create varied phase
+             // We can approximate world position using instanceMatrix * 0,0,0
+             vec4 instancePos = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
              
-             // Flutter (High frequency)
+             // Phase based on X/Z position
+             float phase = instancePos.x * 0.5 + instancePos.z * 0.3;
+             
+             // Two layers of noise
+             // 1. Flutter (Fast, small)
              float flutter = sin(uTime * 3.0 + phase * 2.0) * 0.05 * windStrength;
              
-             // Sway (Low frequency)
+             // 2. Sway (Slow, large)
+             // Using simple sin wave for stability/performance over Perlin noise
              float sway = sin(uTime * 0.5 * windSpeed + phase) * 0.2 * windStrength;
              
-             // Apply based on Y (height influence) - assume leaf origin is bottom
-             float influence = smoothstep(0.0, 1.0, position.y + 0.5); // Adjust based on geometry centering
+             // Height influence: Grow stronger near top? 
+             // Assuming local vertex.y is reasonable or using instancePos.y
+             float heightFactor = smoothstep(0.0, 10.0, instancePos.y); 
              
-             transformed.x += sway * influence + flutter;
+             // Apply deformations
+             transformed.x += sway * heightFactor + flutter;
+             transformed.y += flutter * 0.5; // slight bobbing
              transformed.z += flutter;
              
-             // Rotation approximation
-             float angle = sway * 0.5;
+             // Simple rotation approximation around anchor
+             float angle = sway * 0.2 * heightFactor;
              float c = cos(angle);
              float s = sin(angle);
-             // Rotate around Z axis roughly
-             float tx = transformed.x * c - transformed.y * s;
-             float ty = transformed.x * s + transformed.y * c;
+             
+             // Rotate X/Z around Y slightly
+             float tx = transformed.x * c - transformed.z * s;
+             float tz = transformed.x * s + transformed.z * c; // Typo fix: z*c
              transformed.x = tx;
-             transformed.y = ty;
+             // transformed.z = tz; // Skip full rotation to save cycles, just X sway is mostly effective
         }
+        // ------------------------
         `
     );
 };
 
-export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotions, onLeafHover, reduceMotion, seed, isCinematic, windLevel, isPaused }) => {
+// -----------------------------------------------------------------------------
+// COMPONENT
+// -----------------------------------------------------------------------------
+export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({
+    emotions,
+    onLeafClick,
+    onLeafHover,
+    reduceMotion,
+    seed,
+    isCinematic,
+    windLevel,
+    isPaused
+}) => {
     // Refs
-    const canopyMeshRef = useRef<THREE.InstancedMesh>(null);
-    const emotionMeshRefs = useRef<(THREE.InstancedMesh | null)[]>([]);
-    const materialShaderRefs = useRef<any[]>([]); // To update uniforms
+    // 0 = Canopy, 1..5 = Emotion Textures
+    const meshRefs = useRef<(THREE.InstancedMesh | null)[]>([]);
+    const materialShaderRefs = useRef<any[]>([]);
     const groupRef = useRef<THREE.Group>(null);
 
-    // Stats
-    // const deviceInfo = useStore(state => state.deviceInfo);
-
-    // Actions
-    // Actions
+    // Store Actions
     const { setFocusedLeaf, interactionLock, setInteractionLock, setSelectedMessage } = useStore();
-    // const [hoveredEmotionIndex, setHoveredEmotionIndex] = useState<number | null>(null);
 
-    // Assets
-    const textureUrls = useMemo(() => [
-        '/textures/leaves/leaf_tex_01.png',
-        '/textures/leaves/leaf_tex_02.png',
-        '/textures/leaves/leaf_tex_03.png',
-        '/textures/leaves/leaf_tex_04.png',
-        '/textures/leaves/leaf_tex_05.png'
-    ], []);
+    // Textures with correct base path
+    const textureUrls = useMemo(() => {
+        const base = import.meta.env.BASE_URL || '/';
+        const cleanBase = base.endsWith('/') ? base : `${base}/`;
+        return [
+            `${cleanBase}textures/leaves/leaf_tex_01.png`,
+            `${cleanBase}textures/leaves/leaf_tex_02.png`,
+            `${cleanBase}textures/leaves/leaf_tex_03.png`,
+            `${cleanBase}textures/leaves/leaf_tex_04.png`,
+            `${cleanBase}textures/leaves/leaf_tex_05.png`
+        ];
+    }, []);
 
-    // Load Textures (Memoized)
-    const leafMaps = useLoader(THREE.TextureLoader, textureUrls);
+    // Use our robust loader instead of standard useLoader
+    const { deviceInfo } = useStore();
+    const leafMaps = useOptimizedTextureLoader(textureUrls, deviceInfo.isMobile);
 
-    // Verify Texture Settings Once
     useLayoutEffect(() => {
         leafMaps.forEach(tex => {
             tex.colorSpace = THREE.SRGBColorSpace;
@@ -106,138 +130,177 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
         });
     }, [leafMaps]);
 
-    // Geometries
-    const branchGeometry = useMemo(() => new THREE.CylinderGeometry(0.03, 0.6, 1, 5), []);
-    // Move base up
-    useMemo(() => branchGeometry.translate(0, 0.5, 0), [branchGeometry]);
+    // Geometries (Memoized & shared)
+    // Branch: Thicker base, thin tip: Cylinder(top, bottom, height, segs)
+    // Protocol: CylinderGeometry(0.04, 0.6, 1, 6) -> 0.04 top radius?, 0.6 bottom? 
+    // ThreeJS Cylinder: radiusTop, radiusBottom, height, radialSegments
+    const branchGeometry = useMemo(() => {
+        const g = new THREE.CylinderGeometry(0.04, 0.6, 1, 6);
+        g.translate(0, 0.5, 0); // Pivot at base
+        return g;
+    }, []);
 
-    const leafGeometry = useMemo(() => new THREE.PlaneGeometry(1.2, 1.8), []);
-    // Center geometry so rotation happens at stem?
-    // Plane is centered by default. Move up by half height so 0,0 is bottom
-    // Leaf height 1.8 -> Move y +0.9
-    // BUT our Procedural Generator assumes center/tips. Let's keep centered but use pivot logic or keep simple.
-    // The previous implementation used centered logic.
+    const leafGeometry = useMemo(() => {
+        // Protocol 2: 1.2, 1.6 (3:4 aspect)
+        return new THREE.PlaneGeometry(1.2, 1.6);
+        // Default center origin is usually fine for these billboard-ish leaves, 
+        // but often we want pivot at stem (bottom).
+        // Let's translate Y up by half height.
+        // g.translate(0, 0.8, 0); 
+        // Leaving centered allows easier rotation in cluster logic.
+    }, []);
 
-    // --- GENERATION ---
-    const { branches, leafAnchors } = useMemo(() => {
-        // Expensive calculation - run only when seed changes
-        return generateProceduralTree(seed);
-    }, [seed]);
+    // -------------------------------------------------------------------------
+    // PROCEDURAL GENERATION (Memoized)
+    // -------------------------------------------------------------------------
+    const { branches, canopyTransforms, emotionGroups, instanceLookup } = useMemo(() => {
+        // 1. Generate Skeleton
+        const treeData = generateProceduralTree(seed);
 
-    // Process Distributions
-    const { canopyTransforms, emotionGroups, instanceLookup } = useMemo(() => {
+        // 2. Generate Dense Cluster Leaves
+        // For each anchor, generate 3 leaves with variations
         const rng = createRng(seed);
-        const indices = Array.from({ length: leafAnchors.length }, (_, i) => i);
-        // Shuffle
+        const clusterAnchors: THREE.Matrix4[] = [];
+
+        const dummy = new THREE.Object3D();
+        const tempPos = new THREE.Vector3();
+        const tempQuat = new THREE.Quaternion();
+        const tempScale = new THREE.Vector3();
+
+        treeData.leafAnchors.forEach((anchorMat) => {
+            anchorMat.decompose(tempPos, tempQuat, tempScale);
+
+            // Generate 3 leaves per anchor
+            for (let k = 0; k < 3; k++) {
+                dummy.position.copy(tempPos);
+                dummy.quaternion.copy(tempQuat);
+                dummy.scale.setScalar(1.0);
+
+                // Varied Offsets
+                const offsetX = (rng() - 0.5) * 0.5;
+                const offsetY = (rng() - 0.5) * 0.5;
+                const offsetZ = (rng() - 0.5) * 0.5;
+                dummy.position.add(new THREE.Vector3(offsetX, offsetY, offsetZ));
+
+                // Random Rotation
+                dummy.rotateX((rng() - 0.5) * 1.0);
+                dummy.rotateY((rng() - 0.5) * 6.28); // Full random Y spin often looks good
+                dummy.rotateZ((rng() - 0.5) * 1.0);
+
+                // Random Scale
+                const s = 0.8 + rng() * 0.4;
+                dummy.scale.setScalar(s);
+
+                dummy.updateMatrix();
+                clusterAnchors.push(dummy.matrix.clone());
+            }
+        });
+
+        // 3. Distribute Emotions
+        // Shuffle the abundant leaf positions
+        const indices = Array.from({ length: clusterAnchors.length }, (_, i) => i);
+        // Fisher-Yates shuffle
         for (let i = indices.length - 1; i > 0; i--) {
             const j = Math.floor(rng() * (i + 1));
             [indices[i], indices[j]] = [indices[j], indices[i]];
         }
 
-        const emotionCount = Math.min(emotions.length, leafAnchors.length);
         const cTransforms: THREE.Matrix4[] = [];
-        const eGroups: { transforms: THREE.Matrix4[], originalIndices: number[] }[] = Array.from({ length: 5 }, () => ({ transforms: [], originalIndices: [] }));
+        // [TextureIndex] -> { transforms, originalIndices }
+        const eGroups = Array.from({ length: 5 }, () => ({
+            transforms: [] as THREE.Matrix4[],
+            originalIndices: [] as number[]
+        }));
 
-        const dummy = new THREE.Object3D();
-        const jitterRng = createRng(seed * 2);
+        const emotionCount = emotions.length;
 
-        for (let i = 0; i < leafAnchors.length; i++) {
-            const anchorMat = leafAnchors[indices[i]];
-            dummy.matrix.copy(anchorMat);
-            dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
-
-            // Jitter
-            dummy.position.addScalar((jitterRng() - 0.5) * 0.4);
-            dummy.rotation.x += (jitterRng() - 0.5) * 0.5;
-            dummy.rotation.y += (jitterRng() - 0.5) * 0.5;
-            dummy.rotation.z += (jitterRng() - 0.5) * 0.5;
-            // Uniform Scale
-            const s = 0.8 + jitterRng() * 0.4;
-            dummy.scale.setScalar(s);
-            dummy.updateMatrix();
+        for (let i = 0; i < clusterAnchors.length; i++) {
+            const mat = clusterAnchors[indices[i]];
 
             if (i < emotionCount) {
-                // Emotion Leaf
-                const emIdx = i;
+                // It's an Emotion Leaf
+                const emIdx = i; // Use 'i' to map to the first 'i' emotions
                 const em = emotions[emIdx];
+
+                // Determine Texture Group
                 let texIdx = 0;
                 if (em?.textureUrl) {
-                    const match = em.textureUrl.match(/_0?(\d)\.png$/i) || em.textureUrl.match(/_0?(\d)\.jpg$/i); // supports both
-                    if (match) texIdx = Math.max(0, Math.min(4, parseInt(match[1]) - 1));
+                    const match = em.textureUrl.match(/_0?(\d)\.(png|jpg|jpeg)$/i);
+                    if (match) {
+                        texIdx = Math.max(0, Math.min(4, parseInt(match[1]) - 1));
+                    }
                 }
 
-                eGroups[texIdx].transforms.push(dummy.matrix.clone());
+                eGroups[texIdx].transforms.push(mat);
                 eGroups[texIdx].originalIndices.push(emIdx);
             } else {
-                // Canopy Leaf
-                cTransforms.push(dummy.matrix.clone());
+                // It's a Canopy Leaf
+                cTransforms.push(mat);
             }
         }
 
-        return { canopyTransforms: cTransforms, emotionGroups: eGroups, instanceLookup: eGroups.map(g => g.originalIndices) };
-    }, [leafAnchors, seed, emotions]);
+        return {
+            branches: treeData.branches,
+            canopyTransforms: cTransforms,
+            emotionGroups: eGroups,
+            instanceLookup: eGroups.map(g => g.originalIndices)
+        };
+    }, [seed, emotions]);
 
+    // -------------------------------------------------------------------------
+    // LIFECYCLE / ANIMATION
+    // -------------------------------------------------------------------------
+
+    // Update Matrices when distribution changes
     useLayoutEffect(() => {
-        // const dummy = new THREE.Object3D();
+        // Canopy Mesh (Index 0 in mapped array logic, or separate)
+        // Let's use specific ref for canopy? No, let's just use the array
+        // We will render Canopy as the *last* item or explicitly named mesh
+    }, [canopyTransforms, emotionGroups]);
 
-        // Canopy
-        if (canopyMeshRef.current) {
-            canopyTransforms.forEach((mat, i) => {
-                canopyMeshRef.current!.setMatrixAt(i, mat);
-            });
-            canopyMeshRef.current.instanceMatrix.needsUpdate = true;
-        }
-
-        // Emotions
-        emotionGroups.forEach((group, gIdx) => {
-            const mesh = emotionMeshRefs.current[gIdx];
-            if (mesh) {
-                group.transforms.forEach((mat, i) => {
-                    mesh.setMatrixAt(i, mat);
-                });
-                mesh.instanceMatrix.needsUpdate = true;
-            }
-        });
-
-    }, [canopyTransforms, emotionGroups]); // Only update if distribution changes
-
-    // Animation Loop (GPU Uniforms Only)
+    // Animation Loop (GPU Uniforms)
     useFrame((state) => {
         if (isPaused) return;
         const time = state.clock.elapsedTime;
 
-        // Update Shader Uniforms
         materialShaderRefs.current.forEach(shader => {
             if (shader) {
                 shader.uniforms.uTime.value = time;
-                // Update wind params if needed dynamic
-                shader.uniforms.uWindParams.value.set(
-                    reduceMotion ? 0.0 : (windLevel === 'Breezy' ? 1.5 : 0.8), // Speed
-                    reduceMotion ? 0.0 : (windLevel === 'Off' ? 0.0 : 0.1)     // Strength
-                );
+                // Update wind params
+                const isWindy = windLevel === 'Breezy';
+                const speed = isWindy ? 1.5 : 0.8;
+                const strength = reduceMotion || windLevel === 'Off' ? 0.0 : (isWindy ? 0.15 : 0.08); // Reduced strength for stability
+
+                shader.uniforms.uWindParams.value.set(speed, strength);
             }
         });
     });
 
-    // Interaction Handler
+    // -------------------------------------------------------------------------
+    // HANDLERS
+    // -------------------------------------------------------------------------
     const handleInteract = (e: ThreeEvent<MouseEvent>, type: 'hover' | 'click') => {
         e.stopPropagation();
         if (isCinematic || interactionLock) return;
 
-        // Use findIndex to identify group
-        const gIdx = emotionMeshRefs.current.indexOf(e.object as THREE.InstancedMesh);
-        if (gIdx === -1 || typeof e.instanceId !== 'number') return;
+        // Identify texture group from mesh
+        // We'll map the meshes in the render loop.
+        // Needs a known order.
+        const object = e.object as THREE.InstancedMesh;
+        const groupIndex = parseInt(object.userData.groupIndex); // Store index in userData
+
+        if (isNaN(groupIndex)) return;
 
         const instanceId = e.instanceId;
-        const originalIdx = instanceLookup[gIdx]?.[instanceId];
+        if (typeof instanceId !== 'number') return;
 
+        const originalIdx = instanceLookup[groupIndex]?.[instanceId];
         if (originalIdx === undefined || !emotions[originalIdx]) return;
 
         const emotion = emotions[originalIdx];
 
         if (type === 'hover') {
             onLeafHover(emotion, e.clientX, e.clientY);
-            // setHoveredEmotionIndex(originalIdx);
             document.body.style.cursor = 'pointer';
         } else {
             // Click
@@ -245,35 +308,58 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
             setTimeout(() => setInteractionLock(false), 1000);
             soundManager.playClick();
 
-            // Get World Matrix for Hero Transition
-            const dummy = new THREE.Object3D();
-            const mesh = emotionMeshRefs.current[gIdx];
+            onLeafClick(emotion);
+
+            const mesh = meshRefs.current[groupIndex]; // Use refs to access mesh
+
+            // Add particles or highlight temporary
             if (mesh && groupRef.current) {
+                const dummy = new THREE.Object3D();
                 mesh.getMatrixAt(instanceId, dummy.matrix);
-                const worldMatrix = dummy.matrix.clone().premultiply(groupRef.current.matrixWorld);
+
+                // Create "pop" effect increasing scale temporarily
+                const originalMatrix = dummy.matrix.clone();
+                dummy.matrix.decompose(dummy.position, dummy.quaternion, dummy.scale);
+                dummy.scale.multiplyScalar(1.2);
+                dummy.updateMatrix();
+                mesh.setMatrixAt(instanceId, dummy.matrix);
+                mesh.instanceMatrix.needsUpdate = true;
+
+                // Restore after 300ms
+                setTimeout(() => {
+                    if (mesh) {
+                        mesh.setMatrixAt(instanceId, originalMatrix);
+                        mesh.instanceMatrix.needsUpdate = true;
+                    }
+                }, 300);
+
+                // Get World Matrix for Transition - Using original matrix to capture correct world pos before pop
+                const worldMatrix = originalMatrix.clone().premultiply(mesh.matrixWorld);
 
                 setFocusedLeaf({
                     id: emotion.id,
-                    textureIndex: gIdx, // This relies on the index 0-4 matching texture array
+                    textureIndex: groupIndex,
                     instanceId,
                     matrix: worldMatrix
                 });
 
-                // Show message delayed
                 const msg = RAW_MESSAGES[Math.floor(Math.random() * RAW_MESSAGES.length)];
                 setTimeout(() => setSelectedMessage(msg), 200);
             }
+
+            // Auto unlock if something fails, but HeroLeaf should handle unlocking
         }
     };
 
+    // -------------------------------------------------------------------------
+    // RENDER
+    // -------------------------------------------------------------------------
     return (
-        <group ref={groupRef} position={[0, -2, 0]}> {/* Simple grounded position for now */}
-
-            {/* Branches (Static) */}
+        <group ref={groupRef} position={[0, -2, 0]}>
+            {/* 1. BRANCHES (Static InstancedMesh) */}
             <instancedMesh
-                args={[undefined, undefined, branches.length]}
+                args={[branchGeometry, undefined, branches.length]}
                 ref={node => {
-                    // Init branches once
                     if (node && branches.length > 0) {
                         const dummy = new THREE.Object3D();
                         branches.forEach((b, i) => {
@@ -283,7 +369,16 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                             const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.normalize());
                             dummy.position.copy(mid);
                             dummy.quaternion.copy(q);
-                            dummy.scale.set(b.thickness, len, b.thickness);
+                            // Scale Y by length, X/Z by thickness
+                            dummy.scale.set(1, len, 1);
+                            // Note: Thickness is baked into geometry? No, cylinder is radius 1? 
+                            // Geometry is 0.04/0.6. Assuming scale 1 is correct for the intended look. 
+                            // Or we scale width? 
+                            // Previous code: dummy.scale.set(b.thickness, len, b.thickness);
+                            // Protocol says "Altere para CylinderGeometry(...)" which implies fixed size?
+                            // But branches usually taper. 
+                            // Let's stick to previous scale logic but use new geometry as base.
+                            dummy.scale.set(1, len, 1); // Rely on Geometry for tapering
                             dummy.updateMatrix();
                             node.setMatrixAt(i, dummy.matrix);
                         });
@@ -291,14 +386,18 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                     }
                 }}
             >
-                <cylinderGeometry args={[0.03, 0.6, 1, 5]} />
                 <meshStandardMaterial color="#3E3228" roughness={0.9} />
             </instancedMesh>
 
-            {/* Canopy (Procedural Leaves) */}
+            {/* 2. CANOPY (Green Leaves - No Interaction/Texture) */}
             <instancedMesh
-                ref={canopyMeshRef}
                 args={[leafGeometry, undefined, canopyTransforms.length]}
+                ref={node => {
+                    if (node && canopyTransforms.length > 0) {
+                        canopyTransforms.forEach((mat, i) => node.setMatrixAt(i, mat));
+                        node.instanceMatrix.needsUpdate = true;
+                    }
+                }}
             >
                 <meshStandardMaterial
                     color="#70a060"
@@ -312,14 +411,28 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                 />
             </instancedMesh>
 
-            {/* Emotions (5 Texture Groups) */}
+            {/* 3. EMOTION LEAVES (Textured) */}
             {emotionGroups.map((group, i) => (
                 <instancedMesh
                     key={`em-group-${i}`}
-                    ref={el => emotionMeshRefs.current[i] = el}
+                    userData={{ groupIndex: i }}
                     args={[leafGeometry, undefined, group.transforms.length]}
+                    ref={node => {
+                        if (node) {
+                            // Update ref array
+                            meshRefs.current[i] = node;
+                            // Update matrices
+                            if (group.transforms.length > 0) {
+                                group.transforms.forEach((mat, idx) => node.setMatrixAt(idx, mat));
+                                node.instanceMatrix.needsUpdate = true;
+                            }
+                        }
+                    }}
                     onPointerMove={(e) => handleInteract(e, 'hover')}
-                    onPointerOut={() => { /* setHoveredEmotionIndex(null); */ document.body.style.cursor = 'auto'; }}
+                    onPointerOut={() => {
+                        document.body.style.cursor = 'auto';
+                        onLeafHover(null, 0, 0); // Clear tooltip
+                    }}
                     onClick={(e) => handleInteract(e, 'click')}
                 >
                     <meshStandardMaterial

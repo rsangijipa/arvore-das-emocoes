@@ -1,7 +1,7 @@
 import React, { useRef, useLayoutEffect, useMemo } from 'react';
 import * as THREE from 'three';
-import { useLoader, useFrame, useThree } from '@react-three/fiber';
-import { useStore } from '../../store/useStore';
+import { useFrame, useThree } from '@react-three/fiber';
+import { useOptimizedTextureLoader } from '../../hooks/useOptimizedTextureLoader';
 
 interface Background360Props {
     rotationSpeed?: number;
@@ -9,8 +9,16 @@ interface Background360Props {
 }
 
 export const Background360: React.FC<Background360Props> = () => {
-    const texture = useLoader(THREE.TextureLoader, '/fundo.jpeg');
     const { deviceInfo } = useStore();
+
+    const backgroundUrl = useMemo(() => {
+        const base = import.meta.env.BASE_URL || '/';
+        const cleanBase = base.endsWith('/') ? base : `${base}/`;
+        return `${cleanBase}fundo.jpeg`;
+    }, []);
+
+    // Returns array, take first
+    const [texture] = useOptimizedTextureLoader([backgroundUrl], deviceInfo.isMobile);
     const sphereRef = useRef<THREE.Mesh>(null);
     const { scene } = useThree();
 
@@ -43,6 +51,9 @@ export const Background360: React.FC<Background360Props> = () => {
 
     useFrame((state, delta) => {
         if (!optimizedTexture || !sphereRef.current) return;
+
+        // Check if image loaded
+        if (!optimizedTexture.image) return;
 
         // Manual Scene Background Cleanup
         if (state.scene.background) {

@@ -4,6 +4,7 @@ import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: './', // Ensure relative paths for assets in production
   plugins: [
     react(),
     tailwindcss(),

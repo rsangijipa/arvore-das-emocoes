@@ -80,7 +80,9 @@ export const useEmotionData = (count: number = 50, seed: number = 1337) => {
                 intensity: 3 + Math.floor(rng() * 3),
                 tags: ['cinematic', 'quote'],
                 timestamp: baseTimestamp - drift,
-                textureUrl: `/textures/leaves/leaf_tex_0${texNum}.jpg`,
+                // Use PNG as requested, fallback if needed logic can be handled in loader, 
+                // but here we specify the source of truth.
+                textureUrl: `/textures/leaves/leaf_tex_0${texNum}.png`,
             };
         });
     }, [count, seed]);
