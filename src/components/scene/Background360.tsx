@@ -13,33 +13,37 @@ export const Background360: React.FC<Background360Props> = () => {
     const { deviceInfo } = useStore();
     const sphereRef = useRef<THREE.Mesh>(null);
     const { scene } = useThree();
-    
+
     // Optimize texture for mobile (clone to avoid modifying hook return)
     const optimizedTexture = React.useMemo(() => {
         const baseTexture = deviceInfo.isMobile ? texture.clone() : texture;
-        
+
         // Configure texture properties in the memo
         baseTexture.colorSpace = THREE.SRGBColorSpace;
         baseTexture.mapping = THREE.EquirectangularReflectionMapping;
-        
+
         if (deviceInfo.isMobile) {
             baseTexture.minFilter = THREE.LinearFilter;
             baseTexture.magFilter = THREE.LinearFilter;
             baseTexture.generateMipmaps = false;
         }
-        
+
         return baseTexture;
     }, [texture, deviceInfo.isMobile]);
 
-    // Apply texture to environment for lighting
+    const quality = useStore(state => state.quality);
+
+    // Apply texture to environment for lighting (Only on High/Balanced)
     useLayoutEffect(() => {
+        if (quality === 'Low') return; // Skip heavy IBL on Low quality
+
         // Scene from useThree is safe to modify in effects
         scene.environment = optimizedTexture;
         return () => {
             scene.environment = null;
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [optimizedTexture]);
+    }, [optimizedTexture, quality]);
 
     const materialRef = useRef<THREE.MeshBasicMaterial>(null);
 
@@ -70,7 +74,7 @@ export const Background360: React.FC<Background360Props> = () => {
     // Use optimized geometry based on device
     const segments = deviceInfo.recommendedBackgroundSegments;
     const rings = Math.floor(segments * 0.67); // Maintain aspect ratio
-    
+
     return (
         <mesh ref={sphereRef} scale={[-1, 1, 1]}>
             <sphereGeometry args={[500, segments, rings]} />

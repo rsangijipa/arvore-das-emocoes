@@ -1,6 +1,6 @@
 import React from 'react';
-import { EffectComposer, Bloom, DepthOfField, Noise } from '@react-three/postprocessing';
-import { BlendFunction } from 'postprocessing';
+import { EffectComposer, Bloom, DepthOfField } from '@react-three/postprocessing';
+
 
 interface EffectsProps {
     quality: string;
@@ -8,33 +8,23 @@ interface EffectsProps {
 }
 
 export const Effects: React.FC<EffectsProps> = ({ quality, isCinematic }) => {
-    if (quality === 'Low') {
-        return (
-            <EffectComposer>
-                <Bloom intensity={0.5} luminanceThreshold={0.8} />
-            </EffectComposer>
-        );
-    }
+    // Aggressive Optimization: No Effects in Low Quality
+    if (quality === 'Low') return null;
 
+    // Basic Bloom for all levels to test stability first
     return (
         <EffectComposer>
             {isCinematic ? (
                 <DepthOfField
-                    focusDistance={0.02} // Adjusted for cinematic modal view
+                    focusDistance={0.02}
                     focalLength={0.4}
                     bokehScale={quality === 'High' ? 4 : 2}
                 />
             ) : <></>}
 
             <Bloom
-                intensity={isCinematic ? 1.4 : (quality === 'High' ? 1.0 : 0.7)}
-                luminanceThreshold={isCinematic ? 0.2 : 0.5}
-                mipmapBlur
-            />
-
-            <Noise
-                opacity={0.01}
-                blendFunction={BlendFunction.OVERLAY}
+                intensity={isCinematic ? 1.0 : (quality === 'High' ? 0.8 : 0.5)}
+                luminanceThreshold={0.5}
             />
         </EffectComposer>
     );

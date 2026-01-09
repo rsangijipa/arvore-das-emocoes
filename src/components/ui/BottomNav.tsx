@@ -1,5 +1,5 @@
 import React from 'react';
-import { Home, Image as ImageIcon, Compass } from 'lucide-react';
+import { Home, Image as ImageIcon, Compass, Sparkles, Wind } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useStore } from '../../store/useStore';
 import { cn } from '../../utils/cn';
@@ -11,10 +11,12 @@ export const BottomNav: React.FC = () => {
     const navItems = [
         { id: 'home', label: 'Início', icon: Home },
         { id: 'gallery', label: 'Galeria', icon: ImageIcon },
+        { id: 'studio', label: 'Studio', icon: Sparkles },
+        { id: 'breathing', label: 'Respirar', icon: Wind },
         { id: 'explore', label: 'Explorar', icon: Compass },
     ] as const;
 
-    const handleTabChange = (tabId: 'home' | 'gallery' | 'explore') => {
+    const handleTabChange = (tabId: 'home' | 'gallery' | 'explore' | 'studio' | 'breathing') => {
         if (tabId !== activeTab) {
             soundManager.playClick();
             setActiveTab(tabId);

@@ -25,11 +25,19 @@ export const UIOverlay: React.FC = () => {
         isCinematic,
         setCinematic,
         setReduceMotion,
-        reduceMotion
+        reduceMotion,
+        setQuality // Added setQuality
     } = useStore();
 
     const [isVisible, setIsVisible] = useState(false);
     const [isMinimized, setIsMinimized] = useState(false);
+
+    // Sync Performance Toggle
+    const handleTogglePerformance = () => {
+        const newMode = !reduceMotion;
+        setReduceMotion(newMode);
+        setQuality(newMode ? 'Low' : 'High'); // Sync Quality
+    };
 
     useEffect(() => {
         const timer = setTimeout(() => setIsVisible(true), 1500);
@@ -189,18 +197,27 @@ export const UIOverlay: React.FC = () => {
                                             </div>
                                             <div className="flex flex-col">
                                                 <span className="text-[10px] font-bold text-gray-800 uppercase tracking-wide">Performance</span>
-                                                <span className="text-[8px] text-gray-400 font-medium">Melhor Visual</span>
+                                                <span className="text-[8px] text-gray-400 font-medium">
+                                                    {reduceMotion ? "Modo Rápido" : "Melhor Visual"}
+                                                </span>
                                             </div>
                                         </div>
                                         <button
-                                            onClick={() => setReduceMotion(!reduceMotion)}
+                                            onClick={handleTogglePerformance}
                                             className={cn(
                                                 "w-9 h-5 rounded-full p-1 transition-all duration-300 relative",
-                                                reduceMotion ? "bg-gray-200" : "bg-emerald-500"
+                                                reduceMotion ? "bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.4)]" : "bg-gray-200"
                                             )}
                                         >
                                             <motion.div
-                                                animate={{ x: reduceMotion ? 0 : 16 }}
+                                                animate={{
+                                                    x: reduceMotion ? 16 : 0,
+                                                    scale: reduceMotion ? [1, 1.1, 1] : 1
+                                                }}
+                                                transition={{
+                                                    x: { type: "spring", stiffness: 500, damping: 30 },
+                                                    scale: { repeat: Infinity, duration: 2, ease: "easeInOut" }
+                                                }}
                                                 className="w-3 h-3 bg-white rounded-full shadow-md"
                                             />
                                         </button>

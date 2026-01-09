@@ -1,5 +1,5 @@
-import React, { useMemo, useRef, useLayoutEffect, useEffect } from 'react';
-import { useGLTF, Text, Float } from '@react-three/drei';
+import React, { useMemo, useRef } from 'react';
+import { Text, Float } from '@react-three/drei';
 import * as THREE from 'three';
 import type { EmotionData } from '../../types';
 
@@ -16,82 +16,55 @@ const getContrastColor = (hex: string) => {
     return yiq >= 128 ? '#3E3228' : '#F9F7F2';
 };
 
+// Procedural Alpha Map for Leaf Shape
+const generateLeafAlpha = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+        ctx.fillStyle = '#000000';
+        ctx.fillRect(0, 0, 512, 512);
+        ctx.fillStyle = '#ffffff';
+        ctx.translate(256, 256);
+        ctx.beginPath();
+        ctx.moveTo(0, -240);
+        ctx.bezierCurveTo(160, -120, 160, 120, 0, 240);
+        ctx.bezierCurveTo(-160, 120, -160, -120, 0, -240);
+        ctx.fill();
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    return tex;
+};
+
+const leafAlpha = generateLeafAlpha();
+
 export const MessageLeaf: React.FC<MessageLeafProps> = ({ emotion }) => {
-    // Load GLB
-    const gltf = useGLTF('/folha.glb');
-    const { scene } = gltf;
-
-    // Debug (only in development)
-    useEffect(() => {
-        if (import.meta.env.DEV) {
-            if (scene) console.log('MessageLeaf: GLB Loaded', scene);
-            else console.warn('MessageLeaf: GLB Failed to Load');
-        }
-    }, [scene]);
-
     const groupRef = useRef<THREE.Group>(null);
-
-    // Deep clone scene to avoid sharing state across mounts
-    // Using simple object clone for scene graph
-    const clone = useMemo(() => {
-        if (!scene) return null;
-        return scene.clone(true);
-    }, [scene]);
+    const geometry = useMemo(() => new THREE.PlaneGeometry(1, 1.4), []);
 
     // Contrast Color
     const textColor = useMemo(() => getContrastColor(emotion.color), [emotion.color]);
 
-    // Apply color programmatically
-    useLayoutEffect(() => {
-        if (!clone) return;
-
-        clone.traverse((node) => {
-            if ((node as THREE.Mesh).isMesh) {
-                const mesh = node as THREE.Mesh;
-
-                // Clone material to ensure unique color instance
-                if (mesh.material) {
-                    const originalMat = mesh.material as THREE.MeshStandardMaterial; // Assuming standard
-                    const newMat = originalMat.clone();
-
-                    // Apply tint
-                    newMat.color = new THREE.Color(emotion.color).convertSRGBToLinear();
-
-                    // Setup PBR & "Solid" look
-                    newMat.transparent = false;
-                    newMat.opacity = 1.0;
-                    newMat.roughness = 0.5;
-                    newMat.metalness = 0.1;
-
-                    // Preserve texture maps if they exist
-                    if (originalMat.map) newMat.map = originalMat.map;
-                    if (originalMat.normalMap) {
-                        newMat.normalMap = originalMat.normalMap;
-                        newMat.normalScale = new THREE.Vector2(1.5, 1.5);
-                    }
-                    if (originalMat.roughnessMap) newMat.roughnessMap = originalMat.roughnessMap;
-                    if (originalMat.aoMap) newMat.aoMap = originalMat.aoMap;
-
-                    mesh.material = newMat;
-                    mesh.castShadow = true;
-                    mesh.receiveShadow = true;
-                }
-            }
+    const material = useMemo(() => {
+        return new THREE.MeshStandardMaterial({
+            color: new THREE.Color(emotion.color).convertSRGBToLinear(),
+            roughness: 0.5,
+            metalness: 0.1,
+            alphaMap: leafAlpha,
+            transparent: true,
+            alphaTest: 0.5,
+            side: THREE.DoubleSide
         });
-    }, [clone, emotion.color]);
-
-    if (!clone) return null;
+    }, [emotion.color]);
 
     return (
         <Float speed={2} rotationIntensity={0.2} floatIntensity={0.2} floatingRange={[-0.1, 0.1]}>
-            <ambientLight intensity={2} /> {/* Emergency Lighting */}
+            <ambientLight intensity={1} />
 
             <group ref={groupRef} rotation={[Math.PI / 6, 0, 0]}>
-                {/* Scale normalized to 2 as requested */}
-                <primitive object={clone} scale={2} position={[0, -0.5, 0]} />
+                <mesh geometry={geometry} material={material} scale={2.5} position={[0, -0.5, 0]} />
 
-                {/* 3D Text Group - "Floating" on surface */}
-                {/* Adjust positions relative to the new scale/position of primitive */}
                 <group position={[0, 0, 0.2]} rotation={[-Math.PI / 8, 0, 0]}>
                     <Text
                         position={[0, 0.2, 0]}
@@ -124,5 +97,3 @@ export const MessageLeaf: React.FC<MessageLeafProps> = ({ emotion }) => {
         </Float>
     );
 };
-
-useGLTF.preload('/folha.glb');

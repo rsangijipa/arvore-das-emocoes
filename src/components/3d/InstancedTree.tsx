@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useLayoutEffect, useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { useFrame, useLoader, useThree, type ThreeEvent } from '@react-three/fiber';
-import { useGLTF, useTexture } from '@react-three/drei';
+import { useTexture } from '@react-three/drei';
 import { generateProceduralTree } from '../../utils/treeGenerator';
 import { soundManager } from '../../utils/SoundManager';
 import { useStore } from '../../store/useStore';
@@ -16,7 +16,7 @@ import { isWithinRenderDistance } from '../../utils/visibilityCulling';
 
 interface InstancedTreeProps {
     emotions: EmotionData[];
-    //    onLeafClick: (emotion: EmotionData) => void;
+    onLeafClick: (emotion: EmotionData) => void;
     onLeafHover: (emotion: EmotionData | null, x: number, y: number) => void;
     onEmotionsUpdate?: (emotions: EmotionData[]) => void;
     reduceMotion: boolean;
@@ -26,7 +26,7 @@ interface InstancedTreeProps {
     isPaused: boolean;
 }
 
-export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotions, onLeafHover, reduceMotion, seed, isCinematic, windLevel, isPaused }) => {
+export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotions, onLeafClick, onLeafHover, reduceMotion, seed, isCinematic, windLevel, isPaused }) => {
     // Refs
     const canopyMeshRef = useRef<THREE.InstancedMesh>(null);
     const branchMeshRef = useRef<THREE.InstancedMesh>(null);
@@ -37,6 +37,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
     // Shader Uniform Refs REMOVED
 
     // Global State
+    const quality = useStore(state => state.quality);
     const deviceInfo = useStore(state => state.deviceInfo);
     // const lodConfig = useLODConfig(); // Available for future LOD implementation
     const { camera } = useThree();
@@ -59,13 +60,19 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
 
     // Assets
     // Preload textures for interactive leaves
-    const textureUrls = useMemo(() => [
-        '/textures/leaves/leaf_tex_01.jpg',
-        '/textures/leaves/leaf_tex_02.jpg',
-        '/textures/leaves/leaf_tex_03.jpg',
-        '/textures/leaves/leaf_tex_04.jpg',
-        '/textures/leaves/leaf_tex_05.jpg'
-    ], []);
+    const textureUrls = useMemo(() => {
+        if (quality === 'Low') {
+            // Memory Optimization: Load only 1 texture for all leaves on Low quality
+            return ['/textures/leaves/leaf_tex_01.png'];
+        }
+        return [
+            '/textures/leaves/leaf_tex_01.png',
+            '/textures/leaves/leaf_tex_02.png',
+            '/textures/leaves/leaf_tex_03.png',
+            '/textures/leaves/leaf_tex_04.png',
+            '/textures/leaves/leaf_tex_05.png'
+        ];
+    }, [quality]);
 
     const leafMaps = useLoader(THREE.TextureLoader, textureUrls);
 
@@ -94,21 +101,21 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
     // Simple Leaf Alpha Map (Procedural)
     const simpleLeafAlpha = useMemo(() => {
         const canvas = document.createElement('canvas');
-        canvas.width = 128; // Higher res for better rounded edge
-        canvas.height = 128;
+        canvas.width = 512; // Higher res for better rounded edge
+        canvas.height = 512;
         const ctx = canvas.getContext('2d');
         if (ctx) {
             ctx.fillStyle = '#000000';
-            ctx.fillRect(0, 0, 128, 128);
+            ctx.fillRect(0, 0, 512, 512);
 
             // Draw a nice leaf shape
             ctx.fillStyle = '#ffffff';
-            ctx.translate(64, 64);
+            ctx.translate(256, 256);
             ctx.beginPath();
             // Simple elliptical leaf with point
-            ctx.moveTo(0, -60);
-            ctx.bezierCurveTo(40, -30, 40, 30, 0, 60);
-            ctx.bezierCurveTo(-40, 30, -40, -30, 0, -60);
+            ctx.moveTo(0, -240);
+            ctx.bezierCurveTo(160, -120, 160, 120, 0, 240);
+            ctx.bezierCurveTo(-160, 120, -160, -120, 0, -240);
             ctx.fill();
         }
         const tex = new THREE.CanvasTexture(canvas);
@@ -116,35 +123,40 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
         return tex;
     }, []);
 
-    // Preload emotion textures (JPG)
+    // Preload emotion textures (PNG)
     useTexture.preload([
-        '/textures/leaves/leaf_tex_01.jpg',
-        '/textures/leaves/leaf_tex_02.jpg',
-        '/textures/leaves/leaf_tex_03.jpg',
-        '/textures/leaves/leaf_tex_04.jpg',
-        '/textures/leaves/leaf_tex_05.jpg',
+        '/textures/leaves/leaf_tex_01.png',
+        '/textures/leaves/leaf_tex_02.png',
+        '/textures/leaves/leaf_tex_03.png',
+        '/textures/leaves/leaf_tex_04.png',
+        '/textures/leaves/leaf_tex_05.png',
     ]);
 
     // const canopyMap = leafMaps[0];
-    const emotionMaps = leafMaps;
 
-    const { scene: glbScene } = useGLTF("/folha.glb");
+    // Fallback for logic below if we only have 1 texture (treat as if we have 5 slots pointing to same or handle index)
+    // The grouping logic relies on texture URL matching or index.
+    // We need to ensure logic downstream handles the single texture case.
 
-    // 1. Heavy Geometry (Emotions)
+    // const { scene: glbScene } = useGLTF("/folha.glb"); // REMOVED
+
+    // 1. Heavy Geometry (Emotions) -> NOW LIGHTWEIGHT PLANE
     const glbGeometry = useMemo(() => {
-        let geom: THREE.BufferGeometry | null = null;
-        glbScene.traverse((obj) => {
-            if ((obj as THREE.Mesh).isMesh && !geom) {
-                geom = (obj as THREE.Mesh).geometry.clone();
-                geom.center();
-            }
-        });
-        return geom || new THREE.PlaneGeometry(1, 1);
-    }, [glbScene]);
+        return new THREE.PlaneGeometry(1, 1);
+    }, []);
 
     // 2. Light Geometry (Canopy)
     const canopyGeometry = useMemo(() => {
         return new THREE.PlaneGeometry(1, 1);
+    }, []);
+
+    // 3. Branches (Tapered Cylinder)
+    // Super Prompt: "Afinamento dos Galhos (Tapering)"
+    const branchGeometry = useMemo(() => {
+        // RadiusTop: 0.04 (Delicate Tip), RadiusBottom: 0.6 (Strong Base), Height: 1
+        const geo = new THREE.CylinderGeometry(0.04, 0.6, 1, 6);
+        geo.translate(0, 0.5, 0);
+        return geo;
     }, []);
 
     // 3. Materials
@@ -163,6 +175,20 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
         />
     ), [simpleLeafAlpha]);
 
+    // 5. Material Pool for Interactive Leaves
+    // Super Prompt: "Crie 5 materiais PBR distintos"
+    const emotionMaterials = useMemo(() => {
+        return leafMaps.map(tex => new THREE.MeshStandardMaterial({
+            map: tex,
+            transparent: true,
+            alphaTest: 0.5, // Re-enabled as we now have transparency in PNGs
+            side: THREE.DoubleSide,
+            roughness: 0.7,
+            metalness: 0.1,
+            color: '#ffffff' // Ensure texture color is preserved
+        }));
+    }, [leafMaps]);
+
     const scalesRef = useRef<Float32Array | null>(null);
     const branchScalesRef = useRef<Float32Array | null>(null);
 
@@ -173,7 +199,14 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
 
     // --- GEOMETRY GENERATION ---
     const { branches, leafAnchors, treeBounds } = useMemo(() => {
-        const { branches, leafAnchors } = generateProceduralTree(seed);
+        // Map Quality to Complexity (Depth)
+        // Low = 4 (Safe for mobile/webgl1), High = 5 (Standard), Ultra = 6
+        let complexity = 5;
+        if (quality === 'Low') complexity = 4;
+        if (quality === 'Ultra') complexity = 6;
+        if (deviceInfo.isMobile) complexity = Math.min(complexity, 4); // Force Low on mobile
+
+        const { branches, leafAnchors } = generateProceduralTree(seed, complexity);
 
         // Compute Bounds
         const min = new THREE.Vector3(Infinity, Infinity, Infinity);
@@ -205,7 +238,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
         const offsetY = -min.y;
 
         return { branches, leafAnchors, treeBounds: { min, max, size, center, offsetY } };
-    }, [seed]);
+    }, [seed, quality, deviceInfo.isMobile]);
 
     const totalAnchors = leafAnchors.length;
 
@@ -314,7 +347,8 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
         // Helper to extract index from "/leaf_texture_N.png"
         const getTexIdx = (url?: string) => {
             if (!url) return 0;
-            const match = url.match(/_(\d)\.jpg/); // Changed to .jpg
+            // Matches "leaf_tex_01.jpg" -> "01" -> 1. Handles optional leading zero.
+            const match = url.match(/leaf_tex_0?(\d+)\.jpg/);
             return match ? (parseInt(match[1]) - 1) : 0;
         };
 
@@ -413,10 +447,10 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                 const cRng = createRng(seed * 7 + i);
                 const color = new THREE.Color('#90ee90'); // Base light green
 
-                // 30% variation in Hue/Sat/Lightness
-                const hVar = (cRng() - 0.5) * 0.15; // Hue +/- 0.075
-                const sVar = (cRng() - 0.5) * 0.30; // Sat +/- 0.15
-                const lVar = (cRng() - 0.5) * 0.30; // Lightness +/- 0.15
+                // 50% green variation for Common Leaves
+                const hVar = (cRng() - 0.5) * 0.08; // Subtle Hue variation
+                const sVar = (cRng() - 0.5) * 0.20; // Saturation
+                const lVar = (cRng() - 0.5) * 0.50; // 50% Lightness variation as requested
 
                 color.offsetHSL(hVar, sVar, lVar);
                 canopyMeshRef.current!.setColorAt(i, color.convertSRGBToLinear());
@@ -440,7 +474,11 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                     const originalIdx = instanceLookup[gIdx][i];
                     const em = emotions[originalIdx];
                     if (em) {
-                        const c = new THREE.Color(em.color).convertSRGBToLinear().multiplyScalar(1.2);
+                        // Ensure textures react to light (PBR) but keep legibility
+                        // White color multiplied by light = standard PBR behavior
+                        // We tint slightly based on the texture index if needed, but the texture has color.
+                        // For now, keep it white to show the texture's true color.
+                        const c = new THREE.Color('#ffffff').convertSRGBToLinear();
                         mesh.setColorAt(i, c);
                     }
                 });
@@ -517,7 +555,9 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
         if (windLevel === 'Breezy') { windSpeed = 1.4; windAmp = 0.015; }
         if (reduceMotion) { windSpeed *= 0.1; windAmp *= 0.4; }
 
-        // Update Shader Uniforms
+        // Update Shader Uniforms - DISABLED
+        /* 
+        // Refs are removed, so this code is dead
         if (canopyShaderRef.current) {
             canopyShaderRef.current.uniforms.uTime.value = time;
             canopyShaderRef.current.uniforms.uWindParams.value.set(windSpeed, windAmp);
@@ -528,6 +568,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                 shader.uniforms.uWindParams.value.set(windSpeed, windAmp);
             }
         });
+        */
 
         // 2. Canopy
         if (stage >= 2) {
@@ -664,7 +705,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                 // Determine group from texture - Safely
                 let gIdx = 0;
                 if (em.textureUrl) {
-                    const match = em.textureUrl.match(/_(\d)\.jpg/); // Changed to .jpg
+                    const match = em.textureUrl.match(/leaf_tex_0?(\d+)\.jpg/);
                     if (match && match[1]) {
                         gIdx = parseInt(match[1]) - 1;
                     }
@@ -753,6 +794,9 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                     setTimeout(() => {
                         setSelectedMessage(selectedMsg);
                     }, 200);
+
+                    // 6. Notify Parent
+                    onLeafClick(emotion);
                 }
 
                 soundManager.playClick();
@@ -767,12 +811,11 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
             {/* Branches */}
             <instancedMesh
                 ref={branchMeshRef}
-                args={[undefined, undefined, branchTransforms.length]}
+                args={[branchGeometry, undefined, branchTransforms.length]}
                 castShadow={!deviceInfo.isMobile}
                 receiveShadow={!deviceInfo.isMobile}
                 frustumCulled={true}
             >
-                <cylinderGeometry args={[0.3, 0.4, 1, deviceInfo.isMobile ? 4 : 5]} />
                 <meshStandardMaterial color="#3E3228" roughness={0.9} />
             </instancedMesh>
 
@@ -793,8 +836,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                 <instancedMesh
                     key={`em-group-${i}`}
                     ref={el => emotionMeshRefs.current[i] = el}
-                    args={[glbGeometry, undefined, group.transforms.length]}
-                    // args={[canopyGeometry, undefined, group.transforms.length]}
+                    args={[glbGeometry, emotionMaterials[i] || emotionMaterials[0], group.transforms.length]}
                     castShadow={!deviceInfo.isMobile}
                     receiveShadow={!deviceInfo.isMobile}
                     visible={true}
@@ -802,23 +844,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({ emotion
                     onPointerMove={(e) => handlePointerAction(e, 'hover')}
                     onPointerOut={() => { setCursorPointer(false); setHoveredEmotionIndex(null); onLeafHover(null, 0, 0); }}
                     onClick={(e) => handlePointerAction(e, 'click')}
-                >
-                    <meshStandardMaterial
-                        map={emotionMaps[i]}
-                        color="#ffffff"
-                        roughness={0.6}
-                        metalness={0.1}
-                        side={THREE.DoubleSide}
-                        transparent
-                        alphaTest={0.5}
-                        emissive="#ffffff"
-                        emissiveIntensity={deviceInfo.isMobile ? 0.1 : 0.2}
-                    // onBeforeCompile={(shader) => {
-                    //     patchWindShader(shader);
-                    //     emotionShaderRefs.current[i] = shader;
-                    // }}
-                    />
-                </instancedMesh>
+                />
             ))}
 
             <mesh ref={haloRef} visible={hoveredEmotionIndex !== null}>

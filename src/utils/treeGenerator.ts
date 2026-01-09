@@ -15,7 +15,7 @@ interface BranchData {
 
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
-export const generateProceduralTree = (seed: number): TreeData => {
+export const generateProceduralTree = (seed: number, complexity: number = 5): TreeData => {
     const branches: BranchData[] = [];
     const leafAnchors: THREE.Matrix4[] = [];
 
@@ -41,8 +41,9 @@ export const generateProceduralTree = (seed: number): TreeData => {
     // Trunk: Short (2.5) to Tall (5.0)
     const TRUNK_LENGTH = 2.5 + (rng() * 2.5);
 
-    // Depth: 5
-    const MAX_DEPTH = 5;
+    // 3. Complexity Level (Passed via argument)
+    // Low = 4 (Lighter), High = 5 (Standard), Ultra = 6 (Heavy)
+    const MAX_DEPTH = complexity;
 
     // Trifurcated Chance (for Mixed style)
     const TRIFURCATION_CHANCE = style === 1 ? (0.2 + rng() * 0.6) : 0;
@@ -71,29 +72,46 @@ export const generateProceduralTree = (seed: number): TreeData => {
         // Only on tips or high order branches
         if (depth <= 2) {
             const isTip = depth === 0;
-            const baseCount = isTip ? 4 : 1;
-            const count = Math.floor(baseCount + rng() * 2);
+            // Reduce leaf density slightly for lower complexity
+            // Super Prompt: "Aumente significativamente a quantidade de folhas"
+            const densityMult = complexity <= 4 ? 0.7 : 2.5; // Increased from 1.0 to 2.5 for standard
+            const baseCount = (isTip ? 8 : 3) * densityMult; // Doubled base counts
+            const count = Math.max(1, Math.floor(baseCount + rng() * 2));
 
             for (let k = 0; k < count; k++) {
-                const anchorMatrix = new THREE.Matrix4();
+                // CLUSTERING: Generate a cluster of leaves around this point
+                const clusterSize = 3 + Math.floor(rng() * 2); // 3 to 5 leaves per point
 
-                const spread = isTip ? 1.0 : 0.3;
-                const leafPos = end.clone().add(new THREE.Vector3(
-                    (rng() - 0.5) * spread,
-                    (rng() - 0.5) * spread,
-                    (rng() - 0.5) * spread
-                ));
+                for (let c = 0; c < clusterSize; c++) {
+                    const anchorMatrix = new THREE.Matrix4();
+                    const spread = isTip ? 1.0 : 0.3;
 
-                const rot = new THREE.Quaternion().setFromUnitVectors(
-                    new THREE.Vector3(0, 1, 0),
-                    direction
-                );
-                rot.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(
-                    (rng() - 0.5) * 2, rng() * Math.PI * 2, (rng() - 0.5) * 2
-                )));
+                    // Main position
+                    const basePos = end.clone().add(new THREE.Vector3(
+                        (rng() - 0.5) * spread,
+                        (rng() - 0.5) * spread,
+                        (rng() - 0.5) * spread
+                    ));
 
-                anchorMatrix.compose(leafPos, rot, new THREE.Vector3(1, 1, 1));
-                leafAnchors.push(anchorMatrix);
+                    // Cluster offset (local spread)
+                    const clusterOffset = new THREE.Vector3(
+                        (rng() - 0.5) * 0.4,
+                        (rng() - 0.5) * 0.4,
+                        (rng() - 0.5) * 0.4
+                    );
+                    const leafPos = basePos.add(clusterOffset);
+
+                    const rot = new THREE.Quaternion().setFromUnitVectors(
+                        new THREE.Vector3(0, 1, 0),
+                        direction
+                    );
+                    rot.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(
+                        (rng() - 0.5) * 2, rng() * Math.PI * 2, (rng() - 0.5) * 2
+                    )));
+
+                    anchorMatrix.compose(leafPos, rot, new THREE.Vector3(1, 1, 1));
+                    leafAnchors.push(anchorMatrix);
+                }
             }
         }
 
@@ -112,6 +130,9 @@ export const generateProceduralTree = (seed: number): TreeData => {
             // Determine Branch Count
             let branchCount = 2;
             if (style === 1 && rng() < TRIFURCATION_CHANCE) branchCount = 3;
+
+            // Limit branch count for low complexity to reduce exponential growth
+            if (complexity <= 4 && branchCount > 2) branchCount = 2;
 
             for (let i = 0; i < branchCount; i++) {
                 let angle = 0;

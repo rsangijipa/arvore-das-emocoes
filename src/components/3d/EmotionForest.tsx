@@ -3,8 +3,9 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls, Environment, PerspectiveCamera, AdaptiveDpr, Loader, Html } from '@react-three/drei';
 import { motion } from "framer-motion";
 import { InstancedTree } from './InstancedTree';
-// import { Effects } from './Effects';
+import { Effects } from './Effects';
 import { HeroLeaf } from './HeroLeaf';
+import { SunLight } from './SunLight';
 import { CameraRig } from './CameraRig';
 import { Background360 } from '../scene/Background360';
 import { UIOverlay } from '../ui/UIOverlay';
@@ -12,10 +13,12 @@ import { BottomNav } from '../ui/BottomNav';
 import { LeafQuoteOverlay } from '../ui/LeafQuoteOverlay';
 import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { ListView } from '../ui/ListView';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Bird } from 'lucide-react';
 import type { EmotionData } from '../../types';
 import { useStore } from '../../store/useStore';
-import { MessageCard } from '../ui/MessageCard';
+import { StudioMain } from '../ui/StudioMain';
+import { BreathingExercise } from '../ui/BreathingExercise';
+
 
 // Lazy load heavy components for better code splitting
 const LightParticles = lazy(() => import('./LightParticles').then(module => ({ default: module.LightParticles })));
@@ -76,42 +79,37 @@ export const EmotionForest: React.FC = () => {
                     <ErrorBoundary fallback={<ListView emotions={emotions} onLeafClick={handleLeafClickInternal} />}>
                         <Canvas
                             shadows={quality !== 'Low' && !deviceInfo.isMobile}
-                            dpr={quality === 'Low' || deviceInfo.isMobile ? 1 : [1, Math.min(deviceInfo.pixelRatio, 2)]}
+                            dpr={quality === 'Low' || deviceInfo.isMobile ? 1 : [1, 1.5]} // Cap DPR at 1.5 for performance stability
                             gl={{
                                 antialias: quality === 'High' && !deviceInfo.isMobile,
                                 toneMapping: 3,
-                                powerPreference: deviceInfo.isLowEnd ? 'low-power' : 'high-performance',
-                                stencil: false, // Disable stencil buffer on mobile
+                                powerPreference: 'default', // Changed from high-performance to default for stability
+                                stencil: false,
                                 depth: true,
-                                alpha: false, // Opaque background for better performance
+                                alpha: false,
                             }}
-                            performance={{ min: 0.5 }} // Lower target FPS on mobile
+                            performance={{ min: 0.5 }}
                             style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
                         >
                             <PerspectiveCamera makeDefault position={[0, 20, 70]} fov={45} />
 
                             <AdaptiveDpr />
 
-                            {/* <Background360 showSphereFallback={quality === 'Low'} /> */}
-                            {/* <Environment preset="forest" /> */}
+                            {quality !== 'Low' ? (
+                                <Environment preset="forest" />
+                            ) : (
+                                <ambientLight intensity={0.5} />
+                            )}
 
                             {/* Magical Lighting */}
-                            <directionalLight
-                                position={[20, 50, 20]}
-                                intensity={1.5}
-                                castShadow={quality !== 'Low' && !deviceInfo.isMobile}
-                                shadow-mapSize={deviceInfo.isMobile ? [512, 512] : [1024, 1024]}
-                                shadow-bias={-0.0001}
-                                shadow-radius={deviceInfo.isMobile ? 2 : 4}
-                                color="#e9ce98"
-                            />
+                            <SunLight />
                             <hemisphereLight intensity={0.4} color="#cea86c" groundColor="#22190c" />
                             <fog attach="fog" args={['#22190c', 40, 150]} />
 
                             <Suspense fallback={<Html center><div className="text-white text-sm font-serif">Carregando Floresta...</div></Html>}>
+                                <Background360 showSphereFallback={quality === 'Low'} />
                                 <InstancedTree
                                     emotions={emotions}
-                                    // onLeafClick={handleLeafClickInternal}
                                     onLeafHover={handleLeafHover}
                                     onEmotionsUpdate={setEmotions}
                                     reduceMotion={reduceMotion}
@@ -119,15 +117,16 @@ export const EmotionForest: React.FC = () => {
                                     isCinematic={isCinematic || activeTab !== 'home'}
                                     windLevel={windLevel}
                                     isPaused={isPaused}
+                                    onLeafClick={handleLeafClickInternal}
                                 />
                                 <OrbitControls
                                     makeDefault
                                     enabled={!isCinematic && activeTab === 'home' && !focusedEmotion}
-                                    minPolarAngle={Math.PI / 4}
-                                    maxPolarAngle={Math.PI / 2 - 0.05}
-                                    minDistance={25}
-                                    maxDistance={120}
-                                    target={[0, 18, 0]}
+                                    minPolarAngle={Math.PI / 2.2} // Restrict vertical rotation (almost horizontal only)
+                                    maxPolarAngle={Math.PI / 2 - 0.05} // Don't allow going below ground
+                                    minDistance={30}  // Zoom in limit
+                                    maxDistance={80}  // Zoom out limit (restricted to keep tree large)
+                                    target={[0, 15, 0]} // Target slightly higher up the tree
                                     enablePan={false}
                                     enableDamping
                                     dampingFactor={0.05}
@@ -140,14 +139,13 @@ export const EmotionForest: React.FC = () => {
                                 <CameraRig
                                     targetPosition={undefined}
                                 />
-                                {quality !== 'Low' && !deviceInfo.isLowEnd && (
+                                {!reduceMotion && (
                                     <Suspense fallback={null}>
                                         <LightParticles />
                                     </Suspense>
                                 )}
                                 {/* Disable Effects when cinematic to prevent WebGL context conflicts */}
-                                {/* TEMPORARILY DISABLED FOR DEBUGGING */}
-                                {/* {!isCinematic && <Effects quality={quality} isCinematic={isCinematic || activeTab !== 'home'} />} */}
+                                {!isCinematic && quality !== 'Low' && <Effects quality={quality} isCinematic={isCinematic || activeTab !== 'home'} />}
                             </Suspense>
                         </Canvas>
                     </ErrorBoundary>
@@ -175,13 +173,43 @@ export const EmotionForest: React.FC = () => {
                         </div>
                     )}
                     <LeafQuoteOverlay />
-                    <MessageCard />
+                    {/* MessageCard removed - now displayed on HeroLeaf */}
 
                     {/* Main Navigation - Elegant Light Mode */}
                     {!isCinematic && <BottomNav />}
 
                     {/* Control Panel - Elegant Light Mode */}
                     {!isCinematic && activeTab === 'home' && <UIOverlay />}
+
+                    {/* Feature Tabs */}
+                    {activeTab === 'studio' && <StudioMain />}
+                    {activeTab === 'breathing' && <BreathingExercise />}
+
+                    {activeTab === 'gallery' && (
+                        <div className="absolute inset-0 z-50 bg-[#f9f7f2]/95 backdrop-blur-xl p-8 overflow-y-auto pt-24">
+                            <div className="max-w-4xl mx-auto">
+                                <h2 className="text-3xl font-serif text-gray-800 mb-2">Sua Galeria Emocional</h2>
+                                <p className="text-sm text-gray-400 uppercase tracking-widest mb-8">Recordações da sua jornada interior</p>
+                                <ListView emotions={emotions} onLeafClick={handleLeafClickInternal} />
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'explore' && (
+                        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm pointer-events-none">
+                            <motion.div
+                                initial={{ opacity: 0, scale: 0.9 }}
+                                animate={{ opacity: 1, scale: 1 }}
+                                className="text-center p-12 bg-white/10 backdrop-blur-3xl rounded-[3rem] border border-white/20 shadow-2xl"
+                            >
+                                <div className="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                                    <Bird className="text-emerald-400" size={32} />
+                                </div>
+                                <h2 className="text-4xl font-serif text-white mb-4 italic">A Natureza Sussurra...</h2>
+                                <p className="text-white/60 font-sans tracking-[0.4em] uppercase text-xs">Segredos Antigos em Breve</p>
+                            </motion.div>
+                        </div>
+                    )}
 
                     {/* Tooltip */}
                     {tooltip && !isCinematic && activeTab === 'home' && (
