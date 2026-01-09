@@ -28,21 +28,21 @@ export const loadOptimizedTexture = (
 
     return new Promise((resolve, reject) => {
         const loader = new THREE.TextureLoader();
-        
+
         loader.load(
             url,
             (texture) => {
                 texture.colorSpace = THREE.SRGBColorSpace;
                 texture.flipY = false;
                 texture.generateMipmaps = generateMipmaps;
-                texture.minFilter = minFilter;
-                texture.magFilter = magFilter;
-                
+                texture.minFilter = minFilter as THREE.MinificationTextureFilter;
+                texture.magFilter = magFilter as THREE.MagnificationTextureFilter;
+
                 // Optimize for mobile
                 if (isMobile) {
                     texture.anisotropy = 1; // Lower anisotropy on mobile
                 }
-                
+
                 resolve(texture);
             },
             undefined,
@@ -58,10 +58,10 @@ export const preloadTextures = async (
     urls: string[],
     isMobile: boolean = false
 ): Promise<THREE.Texture[]> => {
-    const loadPromises = urls.map(url => 
+    const loadPromises = urls.map(url =>
         loadOptimizedTexture(url, { isMobile })
     );
-    
+
     return Promise.all(loadPromises);
 };
 
@@ -70,13 +70,13 @@ export const preloadTextures = async (
  */
 export const getOptimalTextureUrl = (baseUrl: string): string => {
     // Check if browser supports WebP
-    const supportsWebP = typeof document !== 'undefined' && 
+    const supportsWebP = typeof document !== 'undefined' &&
         document.createElement('canvas').toDataURL('image/webp').indexOf('data:image/webp') === 0;
-    
+
     if (supportsWebP && baseUrl.endsWith('.jpg')) {
         return baseUrl.replace('.jpg', '.webp');
     }
-    
+
     return baseUrl;
 };
 

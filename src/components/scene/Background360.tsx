@@ -13,9 +13,9 @@ export const Background360: React.FC<Background360Props> = () => {
     const { deviceInfo } = useStore();
     const sphereRef = useRef<THREE.Mesh>(null);
     const { scene } = useThree();
-    
+
     // Optimize texture for mobile (clone to avoid modifying hook return)
-    const optimizedTexture = React.useMemo(() => {
+    const optimizedTexture = useMemo(() => {
         if (deviceInfo.isMobile) {
             const cloned = texture.clone();
             cloned.minFilter = THREE.LinearFilter;
@@ -68,7 +68,7 @@ export const Background360: React.FC<Background360Props> = () => {
     // Use optimized geometry based on device
     const segments = deviceInfo.recommendedBackgroundSegments;
     const rings = Math.floor(segments * 0.67); // Maintain aspect ratio
-    
+
     return (
         <mesh ref={sphereRef} scale={[-1, 1, 1]}>
             <sphereGeometry args={[500, segments, rings]} />
