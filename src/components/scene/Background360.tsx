@@ -1,7 +1,7 @@
 import React, { useRef, useLayoutEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
-import { useOptimizedTextureLoader } from '../../hooks/useOptimizedTextureLoader';
+import { useSafeTexture } from '../../hooks/useSafeTexture';
 import { useStore } from '../../store/useStore';
 
 interface Background360Props {
@@ -18,45 +18,33 @@ export const Background360: React.FC<Background360Props> = () => {
         return `${cleanBase}fundo.jpeg`;
     }, []);
 
-    // Returns array, take first
-    const [texture] = useOptimizedTextureLoader([backgroundUrl], deviceInfo.isMobile);
+    // Use Safe Loader - Never suspends
+    const texture = useSafeTexture(backgroundUrl, deviceInfo.isMobile);
     const sphereRef = useRef<THREE.Mesh>(null);
     const { scene } = useThree();
 
-    // Optimize texture for mobile (clone to avoid modifying hook return)
-    const optimizedTexture = useMemo(() => {
-        if (deviceInfo.isMobile) {
-            const cloned = texture.clone();
-            cloned.minFilter = THREE.LinearFilter;
-            cloned.magFilter = THREE.LinearFilter;
-            cloned.generateMipmaps = false;
-            return cloned;
-        }
-        return texture;
-    }, [texture, deviceInfo.isMobile]);
-
     useLayoutEffect(() => {
-        optimizedTexture.colorSpace = THREE.SRGBColorSpace;
-        optimizedTexture.mapping = THREE.EquirectangularReflectionMapping;
-    }, [optimizedTexture]);
+        // Ensure mapping is correct whenever texture updates (placeholder -> real)
+        texture.mapping = THREE.EquirectangularReflectionMapping;
+        // Environment needs this mapping to work correctly
+    }, [texture]);
 
     // Apply texture to environment for lighting
     useLayoutEffect(() => {
-        scene.environment = optimizedTexture;
+        if (texture.name !== 'SAFE_PLACEHOLDER') {
+            scene.environment = texture;
+        }
         return () => {
             scene.environment = null;
         };
-    }, [scene, optimizedTexture]);
+    }, [scene, texture]);
 
     const materialRef = useRef<THREE.MeshBasicMaterial>(null);
 
     useFrame((state, delta) => {
-        if (!optimizedTexture || !sphereRef.current) return;
+        if (!sphereRef.current) return;
 
-        // Check if image loaded
-        if (!optimizedTexture.image) return;
-
-        // Manual Scene Background Cleanup
+        // Manual Scene Background Cleanup to avoid conflicts
         if (state.scene.background) {
             state.scene.background = null;
         }
@@ -71,9 +59,10 @@ export const Background360: React.FC<Background360Props> = () => {
             (scene as any).environmentRotation.y = 0;
         }
 
-        // Fade In
+        // Fade In when real texture loads
         if (materialRef.current) {
-            materialRef.current.opacity = THREE.MathUtils.lerp(materialRef.current.opacity, 1, delta * 2.0);
+            const targetOpacity = texture.name === 'SAFE_PLACEHOLDER' ? 0 : 1;
+            materialRef.current.opacity = THREE.MathUtils.lerp(materialRef.current.opacity, targetOpacity, delta * 2.0);
         }
     });
 
@@ -86,7 +75,7 @@ export const Background360: React.FC<Background360Props> = () => {
             <sphereGeometry args={[500, segments, rings]} />
             <meshBasicMaterial
                 ref={materialRef}
-                map={optimizedTexture}
+                map={texture}
                 side={THREE.BackSide}
                 toneMapped={false}
                 fog={false}

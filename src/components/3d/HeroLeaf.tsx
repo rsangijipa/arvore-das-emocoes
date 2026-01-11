@@ -1,9 +1,11 @@
 import React, { useRef, useLayoutEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Html } from '@react-three/drei';
+import { Text } from '@react-three/drei';
 import { useStore } from '../../store/useStore';
 import { useOptimizedTextureLoader } from '../../hooks/useOptimizedTextureLoader';
+import { HERO_LEAF_CONSTANTS } from '../../constants/3d';
+import { resourceManager } from '../../utils/ResourceManager';
 
 export const HeroLeaf: React.FC = () => {
     const focusedLeaf = useStore(state => state.focusedLeaf);
@@ -23,8 +25,23 @@ export const HeroLeaf: React.FC = () => {
         return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
     };
 
-    // Protocol 2: planeGeometry args={[1.2, 1.6]}
-    const geometry = useMemo(() => new THREE.PlaneGeometry(1.2, 1.6), []);
+    // Shared Geometry via ResourceManager
+    const geometry = useMemo(() => {
+        const key = 'hero_leaf_geo';
+        let geo = resourceManager.getGeometry(key);
+        if (!geo) {
+            geo = new THREE.PlaneGeometry(HERO_LEAF_CONSTANTS.WIDTH, HERO_LEAF_CONSTANTS.HEIGHT);
+            resourceManager.registerGeometry(key, geo);
+        } else {
+            resourceManager.retainGeometry(key);
+        }
+        return geo;
+    }, []);
+
+    // Cleanup geometry ref
+    useLayoutEffect(() => {
+        return () => resourceManager.releaseGeometry('hero_leaf_geo');
+    }, []);
 
     const material = useMemo(() => {
         return new THREE.MeshStandardMaterial({
@@ -33,11 +50,6 @@ export const HeroLeaf: React.FC = () => {
             metalness: 0.1,
             transparent: true,
             side: THREE.DoubleSide
-            // Note: We are relying on the texture having transparency or being a rectangular photo.
-            // Protocol suggests "Suas texturas são JPGs retangulares" + "Card Botânico".
-            // If they are JPGs without alpha, they will be rects.
-            // If we want rounded corners, we could use an alpha map, but the protocol said "Abandone o alphaMap gerado via Canvas".
-            // So we render the full rect.
         });
     }, []);
 
@@ -53,15 +65,8 @@ export const HeroLeaf: React.FC = () => {
         ];
     }, []);
 
-    // We can assume HeroLeaf doesn't need mobile optimization param if it's the "Hero" 
-    // but consistent usage is better.
-    // However, HeroLeaf is arguably high-res. 
-    // Let's passed false for isMobile to ensure highest quality for the Hero Leaf? 
-    // Or respect device settings. Let's respect device settings but maybe with higher quality overrides if needed.
-    // The user didn't specify, so I'll trust generic device info.
-    // Wait, HeroLeaf needs access to store for generic device info?
-    // Not exposed in store right now, wait, yes it is: deviceInfo.
     const { deviceInfo } = useStore();
+    // Use optimized loader (handles caching via ResourceManager)
     const textures = useOptimizedTextureLoader(textureUrls, deviceInfo.isMobile);
 
     // Initialize Animation State when focusedLeaf changes
@@ -81,13 +86,11 @@ export const HeroLeaf: React.FC = () => {
             initialTransformRef.current = { pos: startPos, quat: startQuat, scale: startScale };
             progressRef.current = 0;
 
+            // Apply texture directly (already cached and configured by hook)
             const tex = textures[focusedLeaf.textureIndex] || textures[0];
-            const textureClone = tex.clone();
-            textureClone.colorSpace = THREE.SRGBColorSpace;
-            textureClone.flipY = false;
 
             if (meshRef.current.material instanceof THREE.MeshStandardMaterial) {
-                meshRef.current.material.map = textureClone;
+                meshRef.current.material.map = tex;
                 meshRef.current.material.needsUpdate = true;
             }
         } else {
@@ -100,7 +103,7 @@ export const HeroLeaf: React.FC = () => {
     useFrame((state, delta) => {
         if (!focusedLeaf || !meshRef.current || !initialTransformRef.current) return;
 
-        const distance = 1.8;
+        const distance = HERO_LEAF_CONSTANTS.DISTANCE_FROM_CAMERA;
         // Position slightly off-center if needed, or center
         const targetNDC = new THREE.Vector3(0, 0.0, 0.5);
         targetNDC.unproject(camera);
@@ -112,14 +115,9 @@ export const HeroLeaf: React.FC = () => {
         // Look at camera
         lookAtMat.lookAt(targetPos, camera.position, camera.up);
         targetQuat.setFromRotationMatrix(lookAtMat);
-        // Correct for text mirroring if needed. Protocol says: "scale={[-1, 1, 1]} se necessário" or rotation adjustment.
-        // Usually LookAt makes Z point to camera. Plane is XY. So Front is +Z. 
-        // If text is backward, rotate Y 180.
-        // Let's assume default mapping is correct, if user sees mirror, we flip using scale.
-        // For now, let's strictly follow rotation logic.
 
         const targetScale = new THREE.Vector3(1, 1, 1);
-        const duration = 1.8;
+        const duration = HERO_LEAF_CONSTANTS.ANIMATION_DURATION;
         progressRef.current = Math.min(1, progressRef.current + delta / duration);
         const t = easeInOutCubic(progressRef.current);
 
@@ -148,84 +146,58 @@ export const HeroLeaf: React.FC = () => {
         <group>
             <mesh
                 ref={meshRef}
-                geometry={geometry}
                 material={material}
                 onClick={(e) => {
                     e.stopPropagation();
                     handleDismiss();
                 }}
             >
+                {/* Re-using geometry from useMemo, passed to args if needed, but here passed as prop */}
+                <primitive object={geometry} attach="geometry" />
+
                 {selectedMessage && (
-                    <Html
-                        transform
-                        occlude="blending"
-                        position={[0, 0, 0.05]} // Slightly in front
-                        // Rotation 180 Y if the leaf is looking at camera, to ensure HTML matches Plane orientation?
-                        // Html transform usually aligns with plane. If text is flipped, check Scale in parent.
-                        // Protocol said: "scale={[-1, 1, 1]} se necessário" for the mesh?
-                        // If texture is flipped, we flip mesh. HTML is child.
-                        style={{
-                            width: '300px',
-                            pointerEvents: 'none',
-                            display: 'flex',
-                            flexDirection: 'column',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            opacity: textOpacity,
-                            transition: 'opacity 0.2s',
-                            userSelect: 'none',
-                        }}
-                    >
-                        <div
-                            style={{
-                                width: '100%',
-                                backdropFilter: 'blur(12px)',
-                                WebkitBackdropFilter: 'blur(12px)',
-                                backgroundColor: 'rgba(20, 20, 20, 0.65)',
-                                borderRadius: '16px',
-                                padding: '24px',
-                                border: '1px solid rgba(255,255,255,0.1)',
-                                boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-                                color: '#ffffff',
-                                textAlign: 'center'
-                            }}
+                    <group position={[0, 0, 0.02]}>
+                        <Text
+                            font="https://fonts.gstatic.com/s/playfairdisplay/v30/nuFvD-vYSZviVYUb_rj3ij__anPXJzDwcbmjWBN2PKdFvXDXbtM.woff2"
+                            fontSize={0.09}
+                            maxWidth={0.9}
+                            lineHeight={1.4}
+                            textAlign="center"
+                            color="#22190c"
+                            anchorX="center"
+                            anchorY="middle"
+                            position={[0, 0.1, 0]}
+                            fillOpacity={textOpacity}
                         >
-                            <p
-                                style={{
-                                    fontFamily: 'serif',
-                                    fontSize: '1.2rem',
-                                    lineHeight: '1.6',
-                                    fontWeight: 500,
-                                    margin: '0 0 12px 0',
-                                    textShadow: '0 2px 4px rgba(0,0,0,0.5)'
-                                }}
+                            {`"${selectedMessage.text}"`}
+                        </Text>
+
+                        {selectedMessage.author && (
+                            <Text
+                                font="https://fonts.gstatic.com/s/lato/v24/S6uyw4BMUTPHjx4wXiWtFCc.woff2"
+                                fontSize={0.05}
+                                maxWidth={0.8}
+                                textAlign="center"
+                                color="#22190c"
+                                anchorX="center"
+                                anchorY="top"
+                                position={[0, -0.4, 0]}
+                                fillOpacity={textOpacity * 0.7}
                             >
-                                "{selectedMessage.text}"
-                            </p>
-                            {selectedMessage.author && (
-                                <p
-                                    style={{
-                                        fontSize: '0.75rem',
-                                        letterSpacing: '0.2em',
-                                        textTransform: 'uppercase',
-                                        opacity: 0.8,
-                                        margin: 0
-                                    }}
-                                >
-                                    — {selectedMessage.author}
-                                </p>
-                            )}
-                            <div style={{
-                                marginTop: '16px',
-                                fontSize: '0.6rem',
-                                opacity: 0.4,
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.1em'
-                            }}>
-                                Toque para devolver
-                            </div>
-                        </div>
-                    </Html>
+                                {`— ${selectedMessage.author}`}
+                            </Text>
+                        )}
+
+                        <Text
+                            fontSize={0.04}
+                            color="#22190c"
+                            anchorX="center"
+                            position={[0, -0.7, 0]}
+                            fillOpacity={textOpacity * 0.4}
+                        >
+                            TOQUE PARA DEVOLVER
+                        </Text>
+                    </group>
                 )}
             </mesh>
 
@@ -236,7 +208,7 @@ export const HeroLeaf: React.FC = () => {
                     e.stopPropagation();
                     handleDismiss();
                 }}
-                visible={false} // Raycast only
+                visible={false}
             >
                 <planeGeometry args={[100, 100]} />
                 <meshBasicMaterial />
@@ -244,3 +216,4 @@ export const HeroLeaf: React.FC = () => {
         </group>
     );
 };
+

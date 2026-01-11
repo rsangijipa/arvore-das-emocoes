@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createRng } from './random';
 
+
 export interface TreeData {
     branches: BranchData[];
     leafAnchors: THREE.Matrix4[];
@@ -13,160 +14,97 @@ interface BranchData {
     order: number; // Depth/Time for animation
 }
 
-const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
-
 export const generateProceduralTree = (seed: number): TreeData => {
     const branches: BranchData[] = [];
     const leafAnchors: THREE.Matrix4[] = [];
 
-    // Seeded RNG
     const rng = createRng(seed);
 
-    // DYNAMIC FRACTAL PARAMETERS (Determined by Seed)
-    // This creates "Different Species" for every seed
+    // Fractal Parameters
+    const initialSplitAngle = 0.5; // Base angle
+    const lengthDecay = 0.82;
+    const thicknessDecay = 0.7;
+    const maxDepth = 6;
+    const gnarl = 0.2; // Random organic twist
 
-    // 1. Structure Style
-    // 0 = Strict Bifurcation (2)
-    // 1 = Mixed (2 or 3)
-    // 2 = Unbalanced (Main + Side)
-    const style = Math.floor(rng() * 3);
+    // Controlled Asymmetry
+    const asymmetry = 0.1; // Branch length variation
 
-    // 2. Geometry Parameters
-    // Angle: Narrow (0.3) to Wide (0.9)
-    const SPLIT_ANGLE = 0.3 + (rng() * 0.5);
-
-    // Decay: Fast (0.75) to Slow (0.85 - Tall tree)
-    const LENGTH_DECAY = 0.75 + (rng() * 0.12);
-
-    // Trunk: Short (2.5) to Tall (5.0)
-    const TRUNK_LENGTH = 2.5 + (rng() * 2.5);
-
-    // Depth: 7 to 9
-    const MAX_DEPTH = 7 + Math.floor(rng() * 2.5);
-
-    // Trifurcated Chance (for Mixed style)
-    const TRIFURCATION_CHANCE = style === 1 ? (0.2 + rng() * 0.6) : 0;
-
-    // Constant parameter not derived from RNG
-    const THICKNESS_DECAY = 0.75; // Retain original value as it's not in the dynamic list
-
-    const growFractal = (
+    const grow = (
         start: THREE.Vector3,
         direction: THREE.Vector3,
         length: number,
         thickness: number,
         depth: number,
-        currentOrder: number
+        order: number
     ) => {
+        // Organic twist
+        if (depth < maxDepth && depth > 1) {
+            direction.x += (rng() - 0.5) * gnarl;
+            direction.z += (rng() - 0.5) * gnarl;
+            direction.normalize();
+        }
+
         const end = start.clone().add(direction.clone().multiplyScalar(length));
 
         branches.push({
             start,
             end,
             thickness,
-            order: currentOrder
+            order
         });
 
-        // LEAF GENERATION
-        // Only on tips or high order branches
-        if (depth <= 2) {
-            const isTip = depth === 0;
-            const baseCount = isTip ? 4 : 1;
-            const count = Math.floor(baseCount + rng() * 2);
+        if (depth === 0) {
+            // Leaf Tip
+            const anchor = new THREE.Matrix4();
+            // Align Y+ with branch direction
+            const rot = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
 
-            for (let k = 0; k < count; k++) {
-                const anchorMatrix = new THREE.Matrix4();
+            // Add random roll for variety
+            const roll = new THREE.Quaternion().setFromAxisAngle(direction, rng() * Math.PI * 2);
+            rot.multiply(roll);
 
-                const spread = isTip ? 1.0 : 0.3;
-                const leafPos = end.clone().add(new THREE.Vector3(
-                    (rng() - 0.5) * spread,
-                    (rng() - 0.5) * spread,
-                    (rng() - 0.5) * spread
-                ));
-
-                const rot = new THREE.Quaternion().setFromUnitVectors(
-                    new THREE.Vector3(0, 1, 0),
-                    direction
-                );
-                rot.multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(
-                    (rng() - 0.5) * 2, rng() * Math.PI * 2, (rng() - 0.5) * 2
-                )));
-
-                anchorMatrix.compose(leafPos, rot, new THREE.Vector3(1, 1, 1));
-                leafAnchors.push(anchorMatrix);
-            }
+            anchor.compose(end, rot, new THREE.Vector3(1, 1, 1));
+            leafAnchors.push(anchor);
+            return;
         }
 
-        // RECURSION
-        if (depth > 0) {
-            const up = new THREE.Vector3(0, 1, 0);
-            let right = new THREE.Vector3().crossVectors(direction, up).normalize();
-            if (right.lengthSq() < 0.001) right = new THREE.Vector3(1, 0, 0);
-            const forward = new THREE.Vector3().crossVectors(right, direction).normalize();
+        // Branching Logic
+        const up = new THREE.Vector3(0, 1, 0);
+        let axis = new THREE.Vector3().crossVectors(direction, up).normalize();
+        if (axis.lengthSq() < 0.001) axis = new THREE.Vector3(1, 0, 0);
 
-            // Rotate bifurcation plane
-            const planeRotation = GOLDEN_ANGLE * (MAX_DEPTH - depth); // Consistent Spiral
-            right.applyAxisAngle(direction, planeRotation);
-            forward.applyAxisAngle(direction, planeRotation);
+        // Rotate axis randomly for 3D fullness
+        const axisRot = new THREE.Quaternion().setFromAxisAngle(direction, rng() * Math.PI);
+        axis.applyQuaternion(axisRot);
 
-            // Determine Branch Count
-            let branchCount = 2;
-            if (style === 1 && rng() < TRIFURCATION_CHANCE) branchCount = 3;
+        // Branch 1
+        const angle1 = initialSplitAngle + (rng() - 0.5) * 0.2;
+        const dir1 = direction.clone().applyAxisAngle(axis, angle1).normalize();
+        // Asymmetric growth
+        const len1 = length * lengthDecay * (1 + (rng() - 0.5) * asymmetry);
+        grow(end, dir1, len1, thickness * thicknessDecay, depth - 1, order + 1);
 
-            for (let i = 0; i < branchCount; i++) {
-                let angle = 0;
-                let lenMult = 1.0;
-
-                // Angle Logic per Style
-                if (branchCount === 3) {
-                    // -Angle, 0, +Angle
-                    angle = (i - 1) * SPLIT_ANGLE;
-                    if (i === 1) lenMult = 1.1; // Center longer
-                }
-                else {
-                    // Bi-furcation
-                    const sign = i === 0 ? 1 : -1;
-                    angle = SPLIT_ANGLE * sign;
-
-                    if (style === 2) {
-                        // Unbalanced: One shoots straightish, one shoots out
-                        if (i === 0) { angle *= 0.2; lenMult = 1.2; } // Main leader
-                        else { angle *= 1.5; lenMult = 0.8; } // Side branch
-                    }
-                }
-
-                const newDir = direction.clone()
-                    .applyAxisAngle(forward, angle)
-                    .normalize();
-
-                growFractal(
-                    end,
-                    newDir,
-                    length * LENGTH_DECAY * lenMult,
-                    thickness * THICKNESS_DECAY,
-                    depth - 1,
-                    currentOrder + 1
-                );
-            }
-        }
+        // Branch 2
+        const angle2 = -(initialSplitAngle + (rng() - 0.5) * 0.2);
+        const dir2 = direction.clone().applyAxisAngle(axis, angle2).normalize();
+        const len2 = length * lengthDecay * (1 - (rng() - 0.5) * asymmetry);
+        grow(end, dir2, len2, thickness * thicknessDecay, depth - 1, order + 1);
     };
 
     // Initial Trunk
-    growFractal(
-        new THREE.Vector3(0, -2, 0),
-        new THREE.Vector3(0, 1, 0),
-        TRUNK_LENGTH,
-        2.2,
-        MAX_DEPTH,
+    // Tweak starting position slightly higher for better visibility
+    const startPos = new THREE.Vector3(0, -3, 0);
+    const startDir = new THREE.Vector3(0, 1, 0);
+
+    grow(
+        startPos,
+        startDir,
+        3.5, // Base Trunk Length
+        1.2, // Base Thickness (visual)
+        maxDepth,
         0
     );
-
-    // Sort leaves
-    leafAnchors.sort((a, b) => {
-        const posA = new THREE.Vector3(); a.decompose(posA, new THREE.Quaternion(), new THREE.Vector3());
-        const posB = new THREE.Vector3(); b.decompose(posB, new THREE.Quaternion(), new THREE.Vector3());
-        return posB.y - posA.y;
-    });
 
     return { branches, leafAnchors };
 };

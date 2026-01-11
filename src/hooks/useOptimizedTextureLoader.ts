@@ -1,81 +1,120 @@
+import { useState, useEffect } from 'react';
 import * as THREE from 'three';
-import { loadOptimizedTexture } from '../utils/textureLoader';
+import { resourceManager } from '../utils/ResourceManager';
 
-// Simple resource cache for Suspense
-const cache: Record<string, THREE.Texture | undefined> = {};
-const promises: Record<string, Promise<THREE.Texture> | undefined> = {};
-const errors: Record<string, any> = {};
-
-function read(url: string, isMobile: boolean) {
-    if (cache[url] !== undefined) {
-        return cache[url]!;
+// Shared placeholder
+const createPlaceholder = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 2;
+    canvas.height = 2;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+        ctx.fillStyle = '#22190c';
+        ctx.fillRect(0, 0, 2, 2);
     }
-    if (errors[url] !== undefined) {
-        throw errors[url];
-    }
-    if (promises[url] !== undefined) {
-        throw promises[url];
-    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.name = 'OPT_LOADER_PLACEHOLDER';
+    return tex;
+};
 
-    const promise = loadOptimizedTexture(url, { isMobile })
-        .then((texture) => {
-            cache[url] = texture;
-            return texture;
-        })
-        .catch((err) => {
-            // Should be handled by loadOptimizedTexture fallback, but just in case
-            console.error("Critical error in loader hook", err);
-            errors[url] = err;
-            throw err;
-        });
-
-    promises[url] = promise;
-    throw promise;
-}
+const placeholder = createPlaceholder();
 
 /**
- * Suspense-compatible hook for loading multiple textures
+ * useOptimizedTextureLoader
+ * Loads multiple textures without suspending.
+ * Returns placeholders immediately for any not-yet-loaded textures.
+ * Integrates with ResourceManager.
  */
 export const useOptimizedTextureLoader = (urls: string[], isMobile: boolean = false): THREE.Texture[] => {
-    // We need to read all urls. If any is missing, it will throw.
-    // .map will iterate and the *first* one that throws will suspend the component.
-    // When it resolves, React re-renders, and we proceed to the next, or all are ready.
-
-    // Optimization: Check if all started
-    urls.forEach(url => {
-        if (!cache[url] && !promises[url] && !errors[url]) {
-            read(url, isMobile); // This throws immediately
-        }
+    // Initialize state with cached textures or placeholder
+    const [textures, setTextures] = useState<THREE.Texture[]>(() => {
+        return urls.map(url => resourceManager.getTexture(url) || placeholder);
     });
 
-    // If we got here, maybe some are pending (if we didn't throw above? No, read throws).
-    // Actually, if we want to run them in parallel, we should start them all, then read them.
+    useEffect(() => {
+        let active = true;
+        const loader = new THREE.TextureLoader();
+        loader.crossOrigin = 'Anonymous';
 
-    // Correct pattern for parallel load with Suspense:
-    // 1. Kick off all promises if not started.
-    // 2. Check if any is pending -> Throw Promise.all(pending)
-    // 3. If all done -> return results.
+        // 1. Retain all requested textures
+        urls.forEach(url => resourceManager.retainTexture(url));
 
-    const pending: Promise<THREE.Texture>[] = [];
+        // 2. Load missing ones
+        urls.forEach((url, index) => {
+            // Check cache again in effect
+            if (resourceManager.getTexture(url)) {
+                // Already cached
+            } else {
+                const isKTX2 = url.endsWith('.ktx2');
 
-    urls.forEach(url => {
-        if (promises[url] === undefined) {
-            // Start it
-            const p = loadOptimizedTexture(url, { isMobile })
-                .then((t) => { cache[url] = t; return t; })
-                .catch((e) => { errors[url] = e; });
-            promises[url] = p as Promise<THREE.Texture>;
-        }
+                if (isKTX2) {
+                    // Get KTX2 Loader (lazy init)
+                    // converting global require to dynamic import or just accessing the singleton
+                    // However, we need 'renderer' for detectSupport.
+                    // We can try to access using import { useThree } but that breaks if hook used outside canvas.
+                    // For now, let's assume standard png loader default, and if ktx2, we try to support it.
+                    const ktx2Loader = resourceManager.getKTX2Loader(undefined); // Pass renderer later if possible
 
-        if (cache[url] === undefined && promises[url] !== undefined) {
-            pending.push(promises[url]!);
-        }
-    });
+                    ktx2Loader.load(
+                        url,
+                        (loadedTex: THREE.Texture) => {
+                            if (!active) { loadedTex.dispose(); return; }
+                            loadedTex.colorSpace = THREE.SRGBColorSpace;
+                            loadedTex.flipY = false;
+                            resourceManager.registerTexture(url, loadedTex);
+                            setTextures(prev => {
+                                const next = [...prev];
+                                next[index] = loadedTex;
+                                return next;
+                            });
+                        },
+                        undefined,
+                        (err: unknown) => console.warn(`[KTX2Loader] Failed ${url}`, err)
+                    );
 
-    if (pending.length > 0) {
-        throw Promise.all(pending);
-    }
+                } else {
+                    // Standard PNG/JPG
+                    loader.load(
+                        url,
+                        (loadedTex) => {
+                            if (!active) {
+                                loadedTex.dispose();
+                                return;
+                            }
 
-    // If we are here, everything is in cache (or errored, but we handle fallback in loader)
-    return urls.map(url => cache[url]!);
+                            if (isMobile) {
+                                loadedTex.minFilter = THREE.LinearFilter;
+                                loadedTex.magFilter = THREE.LinearFilter;
+                                loadedTex.generateMipmaps = false;
+                            }
+                            loadedTex.colorSpace = THREE.SRGBColorSpace;
+                            loadedTex.flipY = false;
+
+                            // Register
+                            resourceManager.registerTexture(url, loadedTex);
+
+                            // Update state - triggers re-render
+                            setTextures(prev => {
+                                const next = [...prev];
+                                next[index] = loadedTex;
+                                return next;
+                            });
+                        },
+                        undefined,
+                        (err) => {
+                            console.warn(`[OptimizedLoader] Failed ${url}`, err);
+                        }
+                    );
+                }
+            }
+        });
+
+        // 3. Cleanup
+        return () => {
+            active = false;
+            urls.forEach(url => resourceManager.releaseTexture(url));
+        };
+    }, [urls.join(','), isMobile]); // Dependency on URL list string to avoid deeper check
+
+    return textures;
 };
