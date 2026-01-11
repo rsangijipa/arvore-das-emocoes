@@ -1,12 +1,10 @@
 import { useMemo } from 'react';
 import * as THREE from 'three';
-import { generateProceduralTree } from '../utils/treeGenerator';
-import { createRng } from '../utils/random';
+import { FractalTreeGenerator, type TreeSegment } from '../components/3d/tree/FractalTreeGenerator';
 import type { EmotionData } from '../types';
-import { TREE_CONSTANTS } from '../constants/3d';
 
 export interface TreeGenerationResult {
-    branches: any[];
+    branches: TreeSegment[];
     simpleLeaves: THREE.Matrix4[];
     messageGroups: {
         transforms: THREE.Matrix4[];
@@ -17,66 +15,44 @@ export interface TreeGenerationResult {
 
 export const useTreeGeneration = (seed: number, emotions: EmotionData[]): TreeGenerationResult => {
     return useMemo(() => {
-        // 1. Generate Skeleton
-        const treeData = generateProceduralTree(seed);
+        // 1. Generate Skeleton & Leaves
+        const generator = new FractalTreeGenerator(seed);
+        const skeleton = generator.generate(6); // Max Depth
 
-        // 2. Partition Leaves (90% Simple, 10% Message)
-        const rng = createRng(seed);
-        const totalAnchors = treeData.leafAnchors.length;
-
-        // Shuffle anchors to distribute message leaves randomly
-        const indices = Array.from({ length: totalAnchors }, (_, i) => i);
-        for (let i = indices.length - 1; i > 0; i--) {
-            const j = Math.floor(rng() * (i + 1));
-            [indices[i], indices[j]] = [indices[j], indices[i]];
-        }
-
-        const messageCount = Math.ceil(totalAnchors * 0.1);
-        const messageIndices = new Set(indices.slice(0, messageCount));
-
+        // 2. Separate Leaves
         const sLeaves: THREE.Matrix4[] = [];
         const mGroups = Array.from({ length: 5 }, () => ({
             transforms: [] as THREE.Matrix4[],
             originalIndices: [] as number[]
         }));
 
-        const emotionCount = emotions.length;
+        const emotionCount = emotions.length || 1;
         const dummy = new THREE.Object3D();
 
-        treeData.leafAnchors.forEach((anchorMat, i) => {
-            anchorMat.decompose(dummy.position, dummy.quaternion, dummy.scale);
+        skeleton.leafPoints.forEach((lp) => {
+            dummy.position.copy(lp.position);
+            dummy.quaternion.copy(lp.rotation);
+            dummy.scale.setScalar(lp.scale);
+            dummy.updateMatrix();
 
-            if (messageIndices.has(i)) {
-                // MESSAGE LEAF (10%)
-                const emIdx = mGroups.reduce((acc, g) => acc + g.transforms.length, 0) % Math.max(1, emotionCount);
-                const em = emotions[emIdx];
+            if (lp.type === 'message') {
+                // Distribute across 5 textures
+                // Use position hash for determinism
+                const hash = Math.floor(Math.abs(lp.position.x * 137 + lp.position.y * 149 + lp.position.z * 163));
+                const texIdx = hash % 5;
 
-                // Scale using constants
-                dummy.scale.setScalar(TREE_CONSTANTS.LEAF.MESSAGE_SCALE_FACTOR);
-                dummy.updateMatrix();
-
-                // Determine texture index based on URL or randomness
-                let texIdx = 0;
-                if (em?.textureUrl) {
-                    const match = em.textureUrl.match(/_0?(\d)\.(png|jpg|jpeg)$/i);
-                    if (match) texIdx = Math.max(0, Math.min(4, parseInt(match[1]) - 1));
-                } else {
-                    texIdx = Math.floor(rng() * 5);
-                }
+                // Distribute across emotions
+                const emIdx = hash % emotionCount;
 
                 mGroups[texIdx].transforms.push(dummy.matrix.clone());
                 mGroups[texIdx].originalIndices.push(emIdx);
             } else {
-                // SIMPLE LEAF (90%)
-                // Scale variation
-                dummy.scale.setScalar(0.8 + rng() * 0.2);
-                dummy.updateMatrix();
                 sLeaves.push(dummy.matrix.clone());
             }
         });
 
         return {
-            branches: treeData.branches,
+            branches: skeleton.segments,
             simpleLeaves: sLeaves,
             messageGroups: mGroups,
             instanceLookup: mGroups.map(g => g.originalIndices)

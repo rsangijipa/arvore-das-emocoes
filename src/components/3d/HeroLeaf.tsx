@@ -1,7 +1,6 @@
 import React, { useRef, useLayoutEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Text } from '@react-three/drei';
 import { useStore } from '../../store/useStore';
 import { useOptimizedTextureLoader } from '../../hooks/useOptimizedTextureLoader';
 import { HERO_LEAF_CONSTANTS } from '../../constants/3d';
@@ -9,10 +8,12 @@ import { resourceManager } from '../../utils/ResourceManager';
 
 export const HeroLeaf: React.FC = () => {
     const focusedLeaf = useStore(state => state.focusedLeaf);
-    const selectedMessage = useStore(state => state.selectedMessage);
     const setFocusedLeaf = useStore(state => state.setFocusedLeaf);
     const setSelectedMessage = useStore(state => state.setSelectedMessage);
     const setInteractionLock = useStore(state => state.setInteractionLock);
+    const setFocusedEmotion = useStore(state => state.setFocusedEmotion);
+    const setCinematic = useStore(state => state.setCinematic);
+
 
     // Refs for animation state
     const meshRef = useRef<THREE.Mesh>(null);
@@ -135,12 +136,12 @@ export const HeroLeaf: React.FC = () => {
     const handleDismiss = () => {
         setFocusedLeaf(null);
         setSelectedMessage(null);
+        setFocusedEmotion(null);
+        setCinematic(false);
         setTimeout(() => setInteractionLock(false), 500);
     };
 
     if (!focusedLeaf) return null;
-
-    const textOpacity = progressRef.current > 0.8 ? (progressRef.current - 0.8) * 5 : 0;
 
     return (
         <group>
@@ -152,51 +153,8 @@ export const HeroLeaf: React.FC = () => {
                     handleDismiss();
                 }}
             >
-                {/* Re-using geometry from useMemo, passed to args if needed, but here passed as prop */}
+                {/* Re-using geometry from useMemo */}
                 <primitive object={geometry} attach="geometry" />
-
-                {selectedMessage && (
-                    <group position={[0, 0, 0.02]}>
-                        <Text
-                            fontSize={0.09}
-                            maxWidth={0.9}
-                            lineHeight={1.4}
-                            textAlign="center"
-                            color="#22190c"
-                            anchorX="center"
-                            anchorY="middle"
-                            position={[0, 0.1, 0]}
-                            fillOpacity={textOpacity}
-                        >
-                            {`"${selectedMessage.text}"`}
-                        </Text>
-
-                        {selectedMessage.author && (
-                            <Text
-                                fontSize={0.05}
-                                maxWidth={0.8}
-                                textAlign="center"
-                                color="#22190c"
-                                anchorX="center"
-                                anchorY="top"
-                                position={[0, -0.4, 0]}
-                                fillOpacity={textOpacity * 0.7}
-                            >
-                                {`— ${selectedMessage.author}`}
-                            </Text>
-                        )}
-
-                        <Text
-                            fontSize={0.04}
-                            color="#22190c"
-                            anchorX="center"
-                            position={[0, -0.7, 0]}
-                            fillOpacity={textOpacity * 0.4}
-                        >
-                            TOQUE PARA DEVOLVER
-                        </Text>
-                    </group>
-                )}
             </mesh>
 
             {/* Click Catcher Background when active */}

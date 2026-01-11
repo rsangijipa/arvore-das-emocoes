@@ -14,6 +14,7 @@ import { ErrorBoundary } from '../ui/ErrorBoundary';
 import { CanvasErrorBoundary } from './CanvasErrorBoundary';
 import { ListView } from '../ui/ListView';
 import { TreeA11y } from '../ui/TreeA11y';
+import { MessageOverlay } from '../ui/MessageOverlay';
 import type { EmotionData } from '../../types';
 import { useStore } from '../../store/useStore';
 import { SCENE_CONSTANTS } from '../../constants/3d';
@@ -23,6 +24,7 @@ const LightParticles = lazy(() => import('./LightParticles').then(module => ({ d
 import { useTreeGeneration } from '../../hooks/useTreeGeneration';
 import { ContextMonitor } from './ContextMonitor';
 import { CursorHighlight } from './CursorHighlight';
+import { ContactShadows } from '@react-three/drei';
 import * as THREE from 'three';
 
 export const EmotionForest: React.FC = () => {
@@ -135,7 +137,7 @@ export const EmotionForest: React.FC = () => {
                         >
                             <ContextMonitor setContextLost={setContextLost} onContextRestored={handleContextRestored} />
 
-                            <PerspectiveCamera makeDefault position={[0, 20, 70]} fov={45} />
+                            <PerspectiveCamera makeDefault position={[0, 15, 60]} fov={45} />
 
                             {!deviceInfo.isMobile && <AdaptiveDpr pixelated />}
 
@@ -145,8 +147,8 @@ export const EmotionForest: React.FC = () => {
                                 intensity={SCENE_CONSTANTS.LIGHTS.DIRECTIONAL.INTENSITY}
                                 castShadow={quality !== 'Low' && !deviceInfo.isMobile}
                                 shadow-mapSize={[
-                                    deviceInfo.isMobile ? SCENE_CONSTANTS.LIGHTS.DIRECTIONAL.SHADOW_MAP_SIZE_MOBILE : SCENE_CONSTANTS.LIGHTS.DIRECTIONAL.SHADOW_MAP_SIZE_DESKTOP,
-                                    deviceInfo.isMobile ? SCENE_CONSTANTS.LIGHTS.DIRECTIONAL.SHADOW_MAP_SIZE_MOBILE : SCENE_CONSTANTS.LIGHTS.DIRECTIONAL.SHADOW_MAP_SIZE_DESKTOP
+                                    deviceInfo.isMobile ? 1024 : 2048,
+                                    deviceInfo.isMobile ? 1024 : 2048
                                 ]}
                                 shadow-bias={-0.0001}
                                 color={SCENE_CONSTANTS.LIGHTS.DIRECTIONAL.COLOR}
@@ -178,10 +180,25 @@ export const EmotionForest: React.FC = () => {
                                         isPaused={isPaused}
                                     />
 
+
                                     <CursorHighlight
                                         position={hoverPosition || new THREE.Vector3()}
                                         active={!!hoverPosition}
                                     />
+
+                                    {/* Task 5: Lightweight Shadows */}
+                                    {/* Task 5: Lightweight Shadows */}
+                                    {/* Task 5: Lightweight Shadows - Tuned for "No Plane" Look */}
+                                    {/* Task 5: Ground Plane with Real Shadows (Step 5) */}
+                                    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, 0]} receiveShadow>
+                                        <planeGeometry args={[200, 200]} />
+                                        <shadowMaterial transparent opacity={0.25} color="#050505" />
+                                    </mesh>
+
+                                    {/* Task 4: Particles */}
+                                    <Suspense fallback={null}>
+                                        <LightParticles />
+                                    </Suspense>
 
                                     <OrbitControls
                                         makeDefault
@@ -190,7 +207,7 @@ export const EmotionForest: React.FC = () => {
                                         maxPolarAngle={Math.PI / 2 - 0.05}
                                         minDistance={25}
                                         maxDistance={120}
-                                        target={[0, 18, 0]}
+                                        target={[0, 8, 0]}
                                         enablePan={false}
                                         enableDamping
                                         dampingFactor={0.05}
@@ -198,7 +215,8 @@ export const EmotionForest: React.FC = () => {
                                         autoRotateSpeed={0.4}
                                     />
 
-                                    <HeroLeaf />
+                                    {/* HeroLeaf REMOVED to prevent crash and 3D overlay issues (Step 1 & 4) */}
+                                    {/* <HeroLeaf /> */}
 
                                     <CameraRig targetPosition={undefined} />
 
@@ -255,6 +273,9 @@ export const EmotionForest: React.FC = () => {
                     <LeafQuoteOverlay />
                     {/* MessageCard Removed - Text is on HeroLeaf */}
                     {/* <MessageCard /> */}
+
+                    {/* Message Overlay - Handles Selected Message display */}
+                    <MessageOverlay />
 
                     {!isCinematic && <BottomNav />}
                     {!isCinematic && activeTab === 'home' && <UIOverlay />}

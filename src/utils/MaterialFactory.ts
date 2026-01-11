@@ -14,6 +14,10 @@ export class MaterialFactory {
             mat = new THREE.MeshStandardMaterial({
                 color: TREE_CONSTANTS.BRANCH.COLOR,
                 roughness: TREE_CONSTANTS.BRANCH.ROUGHNESS,
+                // Fix Z-fighting/Black artifacts on trunk
+                polygonOffset: true,
+                polygonOffsetFactor: 1,
+                polygonOffsetUnits: 1
             });
             resourceManager.registerMaterial(key, mat);
         } else {
@@ -31,7 +35,10 @@ export class MaterialFactory {
                 color: TREE_CONSTANTS.LEAF.COLOR_SIMPLE,
                 roughness: TREE_CONSTANTS.LEAF.ROUGHNESS_SIMPLE,
                 side: THREE.DoubleSide,
-                shadowSide: THREE.DoubleSide
+                shadowSide: THREE.DoubleSide,
+                transparent: true,
+                alphaTest: 0.5,
+                depthWrite: false, // Prevents "square" artifacts
             });
             resourceManager.registerMaterial(key, mat);
         } else {
@@ -50,12 +57,15 @@ export class MaterialFactory {
             mat = new THREE.MeshStandardMaterial({
                 map: texture,
                 transparent: true,
-                alphaTest: 0.3,
-                depthWrite: false,
+                alphaTest: 0.5, // Clean cutout
                 side: THREE.DoubleSide,
                 shadowSide: THREE.DoubleSide,
+                // Avoid "plate" look
+                depthWrite: false,
                 roughness: TREE_CONSTANTS.LEAF.ROUGHNESS_MESSAGE,
-                color: TREE_CONSTANTS.LEAF.COLOR_MESSAGE
+                color: TREE_CONSTANTS.LEAF.COLOR_MESSAGE,
+                // Prevent black aliasing
+                premultipliedAlpha: true
             });
             resourceManager.registerMaterial(key, mat);
         } else {

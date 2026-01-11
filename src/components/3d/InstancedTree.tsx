@@ -266,7 +266,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({
     // RENDER
     // -------------------------------------------------------------------------
     return (
-        <group ref={groupRef} position={[0, -2, 0]}>
+        <group ref={groupRef} position={[0, 0.75, 0]}>
             {/* 1. BRANCHES */}
             {/* 1. BRANCHES */}
             <instancedMesh
@@ -276,16 +276,20 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({
                 ref={node => {
                     if (node && branches.length > 0) {
                         branches.forEach((b, i) => {
-                            const mid = b.start.clone().add(b.end).multiplyScalar(0.5);
+                            // const mid = b.start.clone().add(b.end).multiplyScalar(0.5); // OLD: Center-based
+                            // const mid ... UNUSED if pivoted at base
                             const dir = b.end.clone().sub(b.start);
                             const len = dir.length();
 
                             // Reused math objects
                             _quaternion.setFromUnitVectors(_axisY, dir.normalize());
-                            _dummy.position.copy(mid);
+                            _dummy.position.copy(b.start); // NEW: Base-based (geometry is pivoted)
                             _dummy.quaternion.copy(_quaternion);
 
-                            const thickness = b.thickness || TREE_CONSTANTS.BRANCH.RADIUS_BOTTOM;
+                            // Adapt to new TreeSegment structure (radiusBottom) or fallback
+                            const thickness = (b as any).radiusBottom ?? (b as any).thickness ?? TREE_CONSTANTS.BRANCH.RADIUS_BOTTOM;
+
+                            // Scale: X/Z = thickness, Y = length
                             _dummy.scale.set(thickness, len, thickness);
                             _dummy.updateMatrix();
                             node.setMatrixAt(i, _dummy.matrix);
@@ -297,6 +301,8 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({
                 <meshStandardMaterial
                     color={TREE_CONSTANTS.BRANCH.COLOR}
                     roughness={TREE_CONSTANTS.BRANCH.ROUGHNESS}
+                    polygonOffset
+                    polygonOffsetFactor={1}
                 />
             </instancedMesh>
 

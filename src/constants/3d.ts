@@ -3,11 +3,11 @@
 
 export const TREE_CONSTANTS = {
     BRANCH: {
-        RADIUS_TOP: 0.35, // Normalized (was 0.04 - too thin)
-        RADIUS_BOTTOM: 0.5, // Normalized (Diameter = 1) - matches scale thickness logic
+        RADIUS_TOP: 0.35, // Tapered (0.7 * Bottom)
+        RADIUS_BOTTOM: 0.5,
         HEIGHT: 1,
-        SEGMENTS_MOBILE: 4,
-        SEGMENTS_DESKTOP: 6,
+        SEGMENTS_MOBILE: 8,
+        SEGMENTS_DESKTOP: 12,
         COLOR: '#2d241c',
         ROUGHNESS: 0.9
     },
@@ -45,15 +45,15 @@ export const SCENE_CONSTANTS = {
     LIGHTS: {
         DIRECTIONAL: {
             COLOR: '#e9ce98',
-            INTENSITY: 1.5,
+            INTENSITY: 1.8, // Slightly higher to reduce darkness
             POSITION: [20, 50, 20] as [number, number, number],
-            SHADOW_MAP_SIZE_DESKTOP: 1024,
-            SHADOW_MAP_SIZE_MOBILE: 512
+            SHADOW_MAP_SIZE_DESKTOP: 2048,
+            SHADOW_MAP_SIZE_MOBILE: 1024
         },
         HEMISPHERE: {
             SKY_COLOR: '#cea86c',
-            GROUND_COLOR: '#22190c',
-            INTENSITY: 0.4
+            GROUND_COLOR: '#4a3b2a', // Lighter ground color to fill shadows
+            INTENSITY: 0.6 // Boosted ambient
         }
     }
 };

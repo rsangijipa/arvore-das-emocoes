@@ -21,14 +21,13 @@ export const generateProceduralTree = (seed: number): TreeData => {
     const rng = createRng(seed);
 
     // Fractal Parameters
-    const initialSplitAngle = 0.5; // Base angle
-    const lengthDecay = 0.82;
-    const thicknessDecay = 0.7;
-    const maxDepth = 6;
-    const gnarl = 0.2; // Random organic twist
+    const maxDepth = 6; // Reduced from 7 to avoid "twig nest"
+    // Note: Mobile might need 5, but 6 is a good balance for now.
 
-    // Controlled Asymmetry
-    const asymmetry = 0.1; // Branch length variation
+    const initialSplitAngle = 0.65;
+    const lengthDecay = 0.83; // Increased to maintain length (was 0.82)
+    const thicknessDecay = 0.78; // Increased to keep branches thicker (was 0.72)
+    const gnarl = 0.25; // Slightly reduced twist
 
     const grow = (
         start: THREE.Vector3,
@@ -38,10 +37,17 @@ export const generateProceduralTree = (seed: number): TreeData => {
         depth: number,
         order: number
     ) => {
-        // Organic twist
-        if (depth < maxDepth && depth > 1) {
-            direction.x += (rng() - 0.5) * gnarl;
-            direction.z += (rng() - 0.5) * gnarl;
+        // Organic twist (wobble)
+        if (depth < maxDepth && depth > 0) {
+            const wobble = (rng() - 0.5) * gnarl;
+            direction.x += wobble;
+            direction.z += wobble;
+
+            // UpBias for upper levels to avoid drooping too much
+            // Applied only on higher orders to give "crown" shape
+            if (order > 2) {
+                direction.y += 0.25;
+            }
             direction.normalize();
         }
 
@@ -50,58 +56,95 @@ export const generateProceduralTree = (seed: number): TreeData => {
         branches.push({
             start,
             end,
-            thickness,
+            thickness: Math.max(thickness, 0.08), // Clamp minimum thickness
             order
         });
 
-        if (depth === 0) {
-            // Leaf Tip
-            const anchor = new THREE.Matrix4();
-            // Align Y+ with branch direction
-            const rot = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+        // LEAF GENERATION (Cluster at terminals)
+        // Generate leaves on last 2 levels (0 and 1)
+        if (depth <= 1) { // Reduced to last 2 levels effectively (0, 1) to avoid inner clutter
+            // Determine count based on thickness/depth
+            // More leaves at terminals to create "clumps"
+            const leafCount = depth === 0 ? Math.floor(rng() * 4) + 4 : Math.floor(rng() * 3) + 2;
 
-            // Add random roll for variety
-            const roll = new THREE.Quaternion().setFromAxisAngle(direction, rng() * Math.PI * 2);
-            rot.multiply(roll);
+            for (let l = 0; l < leafCount; l++) {
+                const anchor = new THREE.Matrix4();
 
-            anchor.compose(end, rot, new THREE.Vector3(1, 1, 1));
-            leafAnchors.push(anchor);
-            return;
+                // Cluster radius
+                const clusterRadius = 0.35 + rng() * 0.2; // Wider clusters
+                const offset = new THREE.Vector3(
+                    (rng() - 0.5) * clusterRadius,
+                    (rng() - 0.5) * clusterRadius,
+                    (rng() - 0.5) * clusterRadius
+                );
+
+                // Random orientation
+                const leafDir = new THREE.Vector3(rng() - 0.5, rng() + 0.3, rng() - 0.5).normalize();
+                const rot = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), leafDir);
+                const roll = new THREE.Quaternion().setFromAxisAngle(leafDir, rng() * Math.PI * 2);
+                rot.multiply(roll);
+
+                // Scale variation - handled in hook, but base here
+                const scale = 1.0;
+
+                anchor.compose(end.clone().add(offset), rot, new THREE.Vector3(scale, scale, scale));
+                leafAnchors.push(anchor);
+            }
         }
 
-        // Branching Logic
+        if (depth === 0) return;
+
+        // --- ORGANIC BRANCHING logic ---
+        // Base children: 2
+        // Lower chance for 3rd/4th branch to avoid density
+        let branchCount = 2;
+        if (rng() < 0.45) branchCount++; // Reduced probability (was 0.55)
+        if (rng() < 0.10 && depth > 3) branchCount++; // Strictly limit 4 branches (was 0.20)
+
         const up = new THREE.Vector3(0, 1, 0);
         let axis = new THREE.Vector3().crossVectors(direction, up).normalize();
         if (axis.lengthSq() < 0.001) axis = new THREE.Vector3(1, 0, 0);
 
-        // Rotate axis randomly for 3D fullness
-        const axisRot = new THREE.Quaternion().setFromAxisAngle(direction, rng() * Math.PI);
+        // Perturb axis slightly
+        const axisRot = new THREE.Quaternion().setFromAxisAngle(direction, rng() * Math.PI * 2);
         axis.applyQuaternion(axisRot);
 
-        // Branch 1
-        const angle1 = initialSplitAngle + (rng() - 0.5) * 0.2;
-        const dir1 = direction.clone().applyAxisAngle(axis, angle1).normalize();
-        // Asymmetric growth
-        const len1 = length * lengthDecay * (1 + (rng() - 0.5) * asymmetry);
-        grow(end, dir1, len1, thickness * thicknessDecay, depth - 1, order + 1);
+        const goldenAngle = 2.39996; // Golden Angle ~137.5 deg
 
-        // Branch 2
-        const angle2 = -(initialSplitAngle + (rng() - 0.5) * 0.2);
-        const dir2 = direction.clone().applyAxisAngle(axis, angle2).normalize();
-        const len2 = length * lengthDecay * (1 - (rng() - 0.5) * asymmetry);
-        grow(end, dir2, len2, thickness * thicknessDecay, depth - 1, order + 1);
+        // Base Rotation offset for this node
+        const nodeOffset = rng() * Math.PI * 2;
+
+        for (let i = 0; i < branchCount; i++) {
+            // Spread logic
+            const spread = initialSplitAngle * (0.8 + rng() * 0.4);
+
+            // Rotate around the parent branch axis (Golden Angle distribution)
+            // i * goldenAngle ensures non-overlapping distribution
+            const spiralRot = new THREE.Quaternion().setFromAxisAngle(direction, nodeOffset + i * goldenAngle);
+
+            // Then rotate OUT from parent
+            const outRot = new THREE.Quaternion().setFromAxisAngle(axis, spread);
+            outRot.premultiply(spiralRot);
+
+            const newDir = direction.clone().applyQuaternion(outRot).normalize();
+
+            // Asymmetry in length
+            const lenMult = lengthDecay * (0.88 + rng() * 0.25); // Less shrink, longer branches
+
+            grow(end, newDir, length * lenMult, thickness * thicknessDecay, depth - 1, order + 1);
+        }
     };
 
     // Initial Trunk
-    // Tweak starting position slightly higher for better visibility
-    const startPos = new THREE.Vector3(0, -3, 0);
+    // Updated to start at Origin (0,0,0) so Container can control Y-position
+    const startPos = new THREE.Vector3(0, 0, 0);
     const startDir = new THREE.Vector3(0, 1, 0);
 
     grow(
         startPos,
         startDir,
-        3.5, // Base Trunk Length
-        1.2, // Base Thickness (visual)
+        4.0, // Base Trunk Length (taller)
+        1.4, // Base Thickness (thicker)
         maxDepth,
         0
     );
