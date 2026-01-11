@@ -3,8 +3,8 @@
 
 export const TREE_CONSTANTS = {
     BRANCH: {
-        RADIUS_TOP: 0.04,
-        RADIUS_BOTTOM: 0.6,
+        RADIUS_TOP: 0.35, // Normalized (was 0.04 - too thin)
+        RADIUS_BOTTOM: 0.5, // Normalized (Diameter = 1) - matches scale thickness logic
         HEIGHT: 1,
         SEGMENTS_MOBILE: 4,
         SEGMENTS_DESKTOP: 6,

@@ -158,7 +158,6 @@ export const HeroLeaf: React.FC = () => {
                 {selectedMessage && (
                     <group position={[0, 0, 0.02]}>
                         <Text
-                            font="https://fonts.gstatic.com/s/playfairdisplay/v30/nuFvD-vYSZviVYUb_rj3ij__anPXJzDwcbmjWBN2PKdFvXDXbtM.woff2"
                             fontSize={0.09}
                             maxWidth={0.9}
                             lineHeight={1.4}
@@ -174,7 +173,6 @@ export const HeroLeaf: React.FC = () => {
 
                         {selectedMessage.author && (
                             <Text
-                                font="https://fonts.gstatic.com/s/lato/v24/S6uyw4BMUTPHjx4wXiWtFCc.woff2"
                                 fontSize={0.05}
                                 maxWidth={0.8}
                                 textAlign="center"

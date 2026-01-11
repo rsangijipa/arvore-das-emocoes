@@ -100,7 +100,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({
         return geo;
     }, [deviceInfo.isMobile]);
 
-    const leafGeometry = useMemo(() => {
+    const messageLeafGeometry = useMemo(() => {
         const key = 'leaf_geo_plane';
         let geo = resourceManager.getGeometry(key);
         if (!geo) {
@@ -117,14 +117,31 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({
         return geo;
     }, []);
 
+    const simpleLeafGeometry = useMemo(() => {
+        const key = 'leaf_geo_circle'; // Actually Pentagon
+        let geo = resourceManager.getGeometry(key);
+        if (!geo) {
+            // Radius approx half width (0.5), 5 segments = Pentagon leaf
+            geo = new THREE.CircleGeometry(0.5, 5);
+            // Align orientation to matche default Plane (up/down? Plane is XY)
+            // Circle is XY too.
+            resourceManager.registerGeometry(key, geo);
+        } else {
+            resourceManager.retainGeometry(key);
+        }
+        return geo;
+    }, []);
+
     // Cleanup Resources
     useEffect(() => {
         const branchKey = `branch_geo_${deviceInfo.isMobile ? 'mobile' : 'desktop'}`;
-        const leafKey = 'leaf_geo_plane';
+        const msgLeafKey = 'leaf_geo_plane';
+        const simpleLeafKey = 'leaf_geo_circle';
 
         return () => {
             resourceManager.releaseGeometry(branchKey);
-            resourceManager.releaseGeometry(leafKey);
+            resourceManager.releaseGeometry(msgLeafKey);
+            resourceManager.releaseGeometry(simpleLeafKey);
             materialShaderRefs.current = [];
         };
     }, [deviceInfo.isMobile]);
@@ -287,7 +304,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({
             <instancedMesh
                 castShadow
                 receiveShadow
-                args={[leafGeometry, undefined, simpleLeaves.length]}
+                args={[simpleLeafGeometry, undefined, simpleLeaves.length]}
                 ref={node => {
                     if (node && simpleLeaves.length > 0) {
                         simpleLeaves.forEach((mat, idx) => node.setMatrixAt(idx, mat));
@@ -311,7 +328,7 @@ export const InstancedTree: React.FC<InstancedTreeProps> = React.memo(({
                     {/* Visual Mesh */}
                     <instancedMesh
                         userData={{ groupIndex: i }}
-                        args={[leafGeometry, undefined, group.transforms.length]}
+                        args={[messageLeafGeometry, undefined, group.transforms.length]}
                         castShadow
                         receiveShadow
                         ref={node => {
