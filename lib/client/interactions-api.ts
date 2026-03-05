@@ -4,6 +4,7 @@ export async function postInteraction(payload: InteractionPayload): Promise<void
   await fetch("/api/interactions", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    keepalive: true,
     body: JSON.stringify(payload),
   }).catch(() => undefined);
 }
@@ -12,6 +13,7 @@ export async function postFavorite(payload: FavoritePayload): Promise<void> {
   await fetch("/api/favorites", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    keepalive: true,
     body: JSON.stringify(payload),
   }).catch(() => undefined);
 }
