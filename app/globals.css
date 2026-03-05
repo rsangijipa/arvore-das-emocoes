@@ -1,0 +1,124 @@
+@import "tailwindcss";
+
+:root {
+  --background: #0f1727;
+  --foreground: #e8eef8;
+  --focus-ring: #f0cf8e;
+  --hud-border: rgba(255, 255, 255, 0.14);
+  --hud-border-strong: rgba(255, 255, 255, 0.2);
+  --hud-surface: rgba(12, 20, 33, 0.78);
+  --hud-surface-soft: rgba(255, 255, 255, 0.08);
+  --hud-text: #e6eef8;
+  --hud-text-muted: rgba(230, 238, 248, 0.68);
+  --hud-primary-bg: #f2efe8;
+  --hud-primary-text: #1c1a17;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+}
+
+body {
+  min-height: 100vh;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), "Segoe UI", sans-serif;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(220, 232, 246, 0.4) rgba(14, 20, 34, 0.5);
+}
+
+.hud-pill {
+  border: 1px solid var(--hud-border);
+  background: var(--hud-surface-soft);
+  border-radius: 9999px;
+  color: var(--hud-text);
+  backdrop-filter: blur(10px);
+}
+
+.hud-card {
+  border: 1px solid var(--hud-border);
+  background: var(--hud-surface);
+  border-radius: 1rem;
+  backdrop-filter: blur(14px);
+}
+
+.hud-sheet {
+  border: 1px solid var(--hud-border);
+  background: rgba(12, 20, 33, 0.86);
+  backdrop-filter: blur(18px);
+}
+
+.hud-btn-primary {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: var(--hud-primary-bg);
+  color: var(--hud-primary-text);
+  border-radius: 9999px;
+}
+
+.hud-btn-secondary {
+  border: 1px solid var(--hud-border);
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--hud-text);
+  border-radius: 9999px;
+}
+
+.hud-btn-ghost {
+  border: 1px solid var(--hud-border);
+  background: transparent;
+  color: var(--hud-text);
+  border-radius: 9999px;
+}
+
+.hud-btn-primary:hover {
+  background: #ffffff;
+}
+
+.hud-btn-secondary:hover,
+.hud-btn-ghost:hover,
+.hud-pill:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.hud-badge {
+  border: 1px solid var(--hud-border-strong);
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--hud-text);
+  backdrop-filter: blur(12px);
+}
+
+.hud-list-item {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 1rem;
+  color: var(--hud-text);
+}
+
+.hud-list-item:hover {
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
