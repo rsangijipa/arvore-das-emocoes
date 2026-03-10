@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { Heart, Shuffle, X } from "lucide-react";
 
+import { QuoteMessageContent } from "@/components/ui/QuoteMessageContent";
 import type { Quote } from "@/types/quote";
 
 type QuotePanelProps = {
@@ -53,22 +54,12 @@ export function QuotePanel({
               <X className="h-4 w-4" />
             </button>
 
-            <p className="mb-2 text-[10px] font-bold tracking-[0.25em] uppercase text-[#DCA269]">Mensagem Encontrada</p>
-            <p className="mb-6 text-[11px] text-[#E8DCC8]/80">{themeLabel}</p>
-
-            <h2 className="font-[family-name:var(--font-display)] text-3xl leading-[1.3] text-[#F8F2E9] drop-shadow-lg sm:text-4xl lg:text-5xl">
-              &quot;{quote.text}&quot;
-            </h2>
-
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
-              <Tag label={`Tema: ${quote.theme}`} />
-              <Tag label={`Tom: ${quote.tone}`} />
-              {quote.author ? <Tag label={`Autor: ${quote.author}`} /> : null}
-            </div>
-
-            <div className="mt-4 min-h-[24px] text-xs text-[#E6C978]/80" aria-live="polite">
-              {favoriteFeedback}
-            </div>
+            <QuoteMessageContent
+              quote={quote}
+              themeLabel={themeLabel}
+              favoriteFeedback={favoriteFeedback}
+              eyebrow="Mensagem Encontrada"
+            />
 
             <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
               <button
@@ -116,13 +107,5 @@ export function QuotePanel({
         )}
       </AnimatePresence>
     </div>
-  );
-}
-
-function Tag({ label }: { label: string }) {
-  return (
-    <span className="rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-[10px] tracking-[0.15em] uppercase text-[#E8DCC8]">
-      {label}
-    </span>
   );
 }

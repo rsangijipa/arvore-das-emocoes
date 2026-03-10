@@ -20,11 +20,15 @@ import type { Quote } from "@/types/quote";
 
 type TreeSceneProps = {
   quotes: Quote[];
+  favoriteQuoteIds: string[];
   qualityProfile: QualityProfile;
+  activeTheme: Quote["theme"] | "all";
   selectedQuoteId: string | null;
   sessionSeedKey: string | null;
   treeSeedBump: number;
   introActive: boolean;
+  isMobile: boolean;
+  reduceMotion: boolean;
   showTutorialMarkers: boolean;
   onSuggestProfile: (profile: QualityProfile) => void;
   onLeafQuoteSelect: (quote: Quote) => void;
@@ -38,14 +42,49 @@ type LeafBinding = {
 };
 
 function PerformanceObserver({
-  profile: _profile,
-  onSuggestProfile: _onSuggestProfile,
+  profile,
+  onSuggestProfile,
 }: {
   profile: QualityProfile;
   onSuggestProfile: (profile: QualityProfile) => void;
 }) {
-  void _profile;
-  void _onSuggestProfile;
+  const sampleElapsedRef = useRef(0);
+  const sampleFramesRef = useRef(0);
+  const lowFpsSamplesRef = useRef(0);
+  const lastSuggestionAtRef = useRef(0);
+
+  useFrame(({ clock }, delta) => {
+    if (profile === "safe") {
+      return;
+    }
+
+    sampleElapsedRef.current += delta;
+    sampleFramesRef.current += 1;
+
+    if (sampleElapsedRef.current < 1.5) {
+      return;
+    }
+
+    const fps = sampleFramesRef.current / sampleElapsedRef.current;
+    const minTargetFps = profile === "high" ? 42 : 28;
+
+    if (fps < minTargetFps) {
+      lowFpsSamplesRef.current += 1;
+    } else {
+      lowFpsSamplesRef.current = 0;
+    }
+
+    const now = clock.elapsedTime;
+    if (lowFpsSamplesRef.current >= 2 && now - lastSuggestionAtRef.current > 4) {
+      lastSuggestionAtRef.current = now;
+      lowFpsSamplesRef.current = 0;
+      onSuggestProfile(profile === "high" ? "medium" : "safe");
+    }
+
+    sampleElapsedRef.current = 0;
+    sampleFramesRef.current = 0;
+  });
+
   return null;
 }
 
@@ -77,10 +116,14 @@ function GroundTerrain() {
 function SceneContent({
   quality,
   quotes,
+  favoriteQuoteIds,
+  activeTheme,
   selectedQuoteId,
   sessionSeedKey,
   treeSeedBump,
   introActive,
+  isMobile,
+  reduceMotion,
   showTutorialMarkers,
   onLeafQuoteSelect,
   onLeafHoverStateChange,
@@ -89,10 +132,14 @@ function SceneContent({
 }: {
   quality: QualityConfig;
   quotes: Quote[];
+  favoriteQuoteIds: string[];
+  activeTheme: Quote["theme"] | "all";
   selectedQuoteId: string | null;
   sessionSeedKey: string | null;
   treeSeedBump: number;
   introActive: boolean;
+  isMobile: boolean;
+  reduceMotion: boolean;
   showTutorialMarkers: boolean;
   onLeafQuoteSelect: (quote: Quote) => void;
   onLeafHoverStateChange: (isHovering: boolean) => void;
@@ -103,7 +150,6 @@ function SceneContent({
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   const [manualSelectedIndex, setManualSelectedIndex] = useState<number | null>(null);
-  const reduceMotion = false;
   const treeSeed = useMemo(() => {
     const curatedSeed = getCuratedTreeSeed(quality.profile, "sunset", sessionSeedKey);
     return Math.abs(curatedSeed + treeSeedBump * 104729);
@@ -167,6 +213,7 @@ function SceneContent({
   }, [quality.leafCount, quotes, treeData.leaves, treeSeed]);
 
   const leafNodes = useMemo(() => leafBindings.map((item) => item.leaf), [leafBindings]);
+  const leafQuoteIds = useMemo(() => leafBindings.map((item) => item.quote?.id ?? null), [leafBindings]);
   const quoteThemes = useMemo(() => leafBindings.map((item) => item.quote?.theme ?? null), [leafBindings]);
 
   const selectedIndex = useMemo(() => {
@@ -206,16 +253,13 @@ function SceneContent({
     (index: number) => {
       setManualSelectedIndex(index);
       const selectedQuote = leafBindings[index]?.quote;
-      if (selectedQuote !== null) {
-        onLeafQuoteSelect(selectedQuote);
+      if (!selectedQuote) {
         return;
       }
 
-      if (quotes.length > 0) {
-        onLeafQuoteSelect(quotes[index % quotes.length]);
-      }
+      onLeafQuoteSelect(selectedQuote);
     },
-    [leafBindings, onLeafQuoteSelect, quotes],
+    [leafBindings, onLeafQuoteSelect],
   );
 
   const handleHover = useCallback(
@@ -283,7 +327,7 @@ function SceneContent({
       <fog attach="fog" args={["#A2CBE3", 15, 45]} />
 
       {/* O Sol Global - Céu Realista */}
-      {quality.profile !== "safe" ? (
+      {quality.profile !== "safe" && !reduceMotion && !isMobile ? (
         <Sky
           distance={450000}
           sunPosition={[8, 12, 6]}
@@ -327,8 +371,10 @@ function SceneContent({
         <BranchInstances branches={treeData.branches} qualityProfile={quality.profile} />
         <LeafInstances
           leaves={leafNodes}
+          quoteIds={leafQuoteIds}
           quoteThemes={quoteThemes}
-          activeTheme="all"
+          favoriteQuoteIds={favoriteQuoteIds}
+          activeTheme={activeTheme}
           reduceMotion={reduceMotion}
           focusActive={selectedLeaf !== null}
           updateDivisor={quality.profile === "safe" ? 3 : quality.profile === "medium" ? 2 : 1}
@@ -348,7 +394,7 @@ function SceneContent({
 
       <GroundTerrain />
 
-      {selectedLeaf && quality.profile !== "safe" ? (
+      {selectedLeaf && quality.profile !== "safe" && !reduceMotion ? (
         <EffectComposer multisampling={0}>
           <DepthOfField focusDistance={0.02} focalLength={0.02} bokehScale={0.9} height={420} />
         </EffectComposer>
@@ -356,12 +402,13 @@ function SceneContent({
 
       <OrbitControls
         ref={controlsRef}
-        enablePan={true}
-        enableZoom={true}
+        enablePan={!isMobile}
+        enableZoom={!isMobile}
         enableRotate={true}
         enableDamping
-        dampingFactor={0.08}
+        dampingFactor={reduceMotion ? 0.05 : 0.08}
         target={[0, 1.5, 0]}
+        rotateSpeed={isMobile ? 0.5 : 0.8}
       />
 
       <PerformanceObserver profile={quality.profile} onSuggestProfile={onSuggestProfile} />
@@ -371,11 +418,15 @@ function SceneContent({
 
 export default function TreeScene({
   quotes,
+  favoriteQuoteIds,
   qualityProfile,
+  activeTheme,
   selectedQuoteId,
   sessionSeedKey,
   treeSeedBump,
   introActive,
+  isMobile,
+  reduceMotion,
   showTutorialMarkers,
   onSuggestProfile,
   onLeafQuoteSelect,
@@ -383,27 +434,32 @@ export default function TreeScene({
   onSceneReady,
 }: TreeSceneProps) {
   const quality = SCENE_QUALITY_CONFIGS[qualityProfile];
+  const resolvedDpr = isMobile ? Math.min(quality.dpr, quality.profile === "safe" ? 1 : 1.2) : quality.dpr;
 
   return (
     <Canvas
       shadows={quality.profile === "safe" ? false : { type: THREE.PCFSoftShadowMap }}
       camera={{ position: [0, 1.2, 7.5], fov: 35 }}
-      dpr={[1, quality.dpr]}
+      dpr={[1, resolvedDpr]}
       gl={{
-        antialias: quality.profile !== "safe",
+        antialias: quality.profile !== "safe" && !isMobile,
         powerPreference: "high-performance",
         toneMapping: THREE.ACESFilmicToneMapping,
-        toneMappingExposure: 0.75,
+        toneMappingExposure: reduceMotion ? 0.72 : 0.75,
       }}
     >
       <Suspense fallback={null}>
         <SceneContent
           quality={quality}
           quotes={quotes}
+          favoriteQuoteIds={favoriteQuoteIds}
+          activeTheme={activeTheme}
           selectedQuoteId={selectedQuoteId}
           sessionSeedKey={sessionSeedKey}
           treeSeedBump={treeSeedBump}
           introActive={introActive}
+          isMobile={isMobile}
+          reduceMotion={reduceMotion}
           showTutorialMarkers={showTutorialMarkers}
           onLeafQuoteSelect={onLeafQuoteSelect}
           onLeafHoverStateChange={onLeafHoverStateChange}

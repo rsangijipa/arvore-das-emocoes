@@ -9,7 +9,9 @@ import type { ThemeFilter } from "@/types/quote";
 
 type LeafInstancesProps = {
   leaves: LeafNode[];
+  quoteIds?: (string | null)[];
   quoteThemes?: (ThemeFilter | null)[];
+  favoriteQuoteIds?: string[];
   activeTheme?: ThemeFilter;
   reduceMotion?: boolean;
   focusActive?: boolean;
@@ -37,7 +39,9 @@ const UP = new THREE.Vector3(0, 1, 0);
 
 export function LeafInstances({
   leaves,
+  quoteIds,
   quoteThemes,
+  favoriteQuoteIds,
   activeTheme,
   reduceMotion = false,
   focusActive = false,
@@ -175,6 +179,7 @@ export function LeafInstances({
     () => ({
       hover: new THREE.Color("#DCE9AE"),
       selected: new THREE.Color("#E7BF77"),
+      favorite: new THREE.Color("#D6B56B"),
       specialA: new THREE.Color("#D3B271"),
       specialB: new THREE.Color("#90B06A"),
       dark: new THREE.Color("#4E6E42"),
@@ -182,6 +187,7 @@ export function LeafInstances({
       dry: new THREE.Color("#8CA66B"),
       gold: new THREE.Color("#B9A16B"),
       themeBoost: new THREE.Color("#D7EEA3"),
+      disabled: new THREE.Color("#465347"),
     }),
     [],
   );
@@ -200,11 +206,18 @@ export function LeafInstances({
       for (let localIndex = 0; localIndex < variantLeaves.length; localIndex += 1) {
         const leaf = variantLeaves[localIndex];
         const isHovered = hoveredIndex === leaf.globalIndex;
+        const quoteId = quoteIds?.[leaf.globalIndex] ?? null;
+        const isInteractive = Boolean(quoteId);
+        const isFavorite = Boolean(quoteId && favoriteQuoteIds?.includes(quoteId));
 
         if (isHovered) {
           color.copy(leafPalette.hover);
         } else if (selectedIndex === leaf.globalIndex) {
           color.copy(leafPalette.selected);
+        } else if (!isInteractive) {
+          color.copy(leafPalette.disabled);
+        } else if (isFavorite) {
+          color.copy(leafPalette.favorite);
         } else if (leaf.isSpecial) {
           color.copy(leafPalette.specialA).lerp(leafPalette.specialB, 0.45);
         } else {
@@ -232,7 +245,7 @@ export function LeafInstances({
         mesh.instanceColor.needsUpdate = true;
       }
     }
-  }, [activeTheme, hoveredIndex, leafPalette, quoteThemes, selectedIndex, variantGroups]);
+  }, [activeTheme, favoriteQuoteIds, hoveredIndex, leafPalette, quoteIds, quoteThemes, selectedIndex, variantGroups]);
 
   useEffect(() => {
     return () => {
@@ -275,13 +288,21 @@ export function LeafInstances({
 
         const isHovered = hoveredIndex === leaf.globalIndex;
         const isSelected = selectedIndex === leaf.globalIndex;
+        const quoteId = quoteIds?.[leaf.globalIndex] ?? null;
+        const isInteractive = Boolean(quoteId);
+        const isFavorite = Boolean(quoteId && favoriteQuoteIds?.includes(quoteId));
         const selectedOffset = selectedIndex === leaf.globalIndex ? 0.14 : 0;
-        const scaleFactor = isHovered ? 1.12 : 1 + selectedOffset;
+        const favoriteBoost = isFavorite ? 0.03 : 0;
+        const scaleFactor = isHovered ? 1.12 : 1 + selectedOffset + favoriteBoost;
 
         dummy.position.copy(leaf.position);
         if (isSelected) {
           const selectedSway = (reduceMotion ? 0.016 : 0.03) * (focusActive ? 0.75 : 1);
           dummy.position.y += Math.sin(time * 2) * selectedSway;
+        } else if (!reduceMotion && isFavorite && !focusActive) {
+          dummy.position.y += Math.sin(time * 1.4 + leaf.phase) * 0.01;
+        } else if (!isInteractive) {
+          dummy.position.y -= 0.015;
         }
 
         dummy.quaternion.copy(leaf.baseRotation).multiply(rollRotation).multiply(windRotation);
@@ -322,6 +343,7 @@ export function LeafInstances({
             if (event.instanceId === undefined) return;
             const globalIndex = group[event.instanceId]?.globalIndex;
             if (globalIndex === undefined) return;
+            if (!quoteIds?.[globalIndex]) return;
             onHover(globalIndex);
           }}
           onPointerMove={(event) => {
@@ -329,6 +351,7 @@ export function LeafInstances({
             if (event.instanceId === undefined) return;
             const globalIndex = group[event.instanceId]?.globalIndex;
             if (globalIndex === undefined) return;
+            if (!quoteIds?.[globalIndex]) return;
             onHover(globalIndex);
           }}
           onClick={(event) => {
@@ -336,6 +359,7 @@ export function LeafInstances({
             if (event.instanceId === undefined) return;
             const globalIndex = group[event.instanceId]?.globalIndex;
             if (globalIndex === undefined) return;
+            if (!quoteIds?.[globalIndex]) return;
             onSelect(globalIndex);
           }}
           castShadow

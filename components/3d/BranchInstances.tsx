@@ -56,6 +56,7 @@ export function BranchInstances({ branches, qualityProfile }: BranchInstancesPro
       const maxY = bounds.max.y;
       const range = Math.max(0.0001, maxY - minY);
       const depthDarken = THREE.MathUtils.clamp(depth / 8, 0, 0.26);
+      const tipGlow = depth <= 1 ? 0.12 : depth <= 3 ? 0.08 : 0.04;
 
       for (let index = 0; index < position.count; index += 1) {
         const y = position.getY(index);
@@ -68,6 +69,10 @@ export function BranchInstances({ branches, qualityProfile }: BranchInstancesPro
         }
 
         color.lerp(baseWood, depthDarken);
+        if (t > 0.68) {
+          color.lerp(highlightWood, ((t - 0.68) / 0.32) * tipGlow);
+        }
+
         colors[index * 3] = color.r;
         colors[index * 3 + 1] = color.g;
         colors[index * 3 + 2] = color.b;
@@ -76,7 +81,14 @@ export function BranchInstances({ branches, qualityProfile }: BranchInstancesPro
       geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
     };
 
-    const createTaperedTube = (curve: THREE.CatmullRomCurve3, rBottom: number, rTop: number, radSeg: number, tubSeg: number) => {
+    const createTaperedTube = (
+      curve: THREE.CatmullRomCurve3,
+      rBottom: number,
+      rTop: number,
+      radSeg: number,
+      tubSeg: number,
+      depth: number,
+    ) => {
       const geom = new THREE.TubeGeometry(curve, tubSeg, 1, radSeg, false);
       const posAttribute = geom.attributes.position;
       const vertexCount = posAttribute.count;
@@ -99,12 +111,20 @@ export function BranchInstances({ branches, qualityProfile }: BranchInstancesPro
 
         const shoulderT = THREE.MathUtils.clamp((t - 0.08) / 0.92, 0, 1);
         const easedTaper = Math.pow(shoulderT, 1.22);
-        const targetRadius = THREE.MathUtils.lerp(rBottom, rTop, easedTaper);
+        let targetRadius = THREE.MathUtils.lerp(rBottom, rTop, easedTaper);
         curve.getPointAt(t, cp);
         dir.copy(v).sub(cp).normalize();
 
         const groove = barkNoise(v.x, v.y, v.z);
         const grooveAmp = (1 - t * 0.75) * 0.013;
+        const shoulderHold =
+          depth <= 1
+            ? (1 - THREE.MathUtils.smoothstep(t, 0.06, 0.34)) * rBottom * 0.08
+            : depth <= 3
+              ? (1 - THREE.MathUtils.smoothstep(t, 0.05, 0.26)) * rBottom * 0.04
+              : 0;
+        targetRadius += shoulderHold;
+
         const newRadius = targetRadius + groove * grooveAmp;
         const newV = cp.add(dir.multiplyScalar(newRadius));
         posAttribute.setXYZ(i, newV.x, newV.y, newV.z);
@@ -120,7 +140,7 @@ export function BranchInstances({ branches, qualityProfile }: BranchInstancesPro
       const tubSegBase = b.depth <= 1 ? 24 : b.depth <= 3 ? 16 : 12;
       const radSeg = Math.max(6, Math.round(radSegBase * segFactor));
       const tubSeg = Math.max(8, Math.round(tubSegBase * segFactor));
-      const geom = createTaperedTube(b.curve, b.radiusBottom, b.radiusTop, radSeg, tubSeg);
+      const geom = createTaperedTube(b.curve, b.radiusBottom, b.radiusTop, radSeg, tubSeg, b.depth);
       paintBranchGradient(geom, b.depth);
       return geom;
     });

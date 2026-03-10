@@ -29,3 +29,30 @@ export function saveFavorites(sessionId: string, quoteIds: string[]): void {
 
   window.localStorage.setItem(storageKey(sessionId), JSON.stringify(quoteIds));
 }
+
+export function mergeFavoriteIds(...groups: string[][]): string[] {
+  return Array.from(
+    new Set(
+      groups.flatMap((group) => group.filter((quoteId): quoteId is string => typeof quoteId === "string" && quoteId.length > 0)),
+    ),
+  );
+}
+
+export function removeFavorites(sessionId: string): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.removeItem(storageKey(sessionId));
+}
+
+export function migrateFavoritesBucket(fromSessionId: string, toSessionId: string): string[] {
+  if (!fromSessionId || !toSessionId || fromSessionId === toSessionId) {
+    return loadFavorites(toSessionId);
+  }
+
+  const merged = mergeFavoriteIds(loadFavorites(fromSessionId), loadFavorites(toSessionId));
+  saveFavorites(toSessionId, merged);
+  removeFavorites(fromSessionId);
+  return merged;
+}

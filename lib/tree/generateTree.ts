@@ -59,6 +59,7 @@ export function generateFractalTree(options: GenerateTreeOptions): TreeData {
   const up = new THREE.Vector3(0, 1, 0);
   const radial = new THREE.Vector3();
   const tangentFrame = new THREE.Quaternion();
+  let highestBranchTip = new THREE.Vector3(0, options.trunkHeight, 0);
 
   const pushLeafCluster = (
     center: THREE.Vector3,
@@ -274,6 +275,9 @@ export function generateFractalTree(options: GenerateTreeOptions): TreeData {
 
       const tipPoint = bCurve.getPointAt(0.98);
       const tipDirection = bCurve.getTangentAt(0.98).normalize();
+      if (tipPoint.y > highestBranchTip.y) {
+        highestBranchTip = tipPoint.clone();
+      }
 
       if (depth >= options.maxDepth - 2 && random() > 0.06) {
         const transitionCount = Math.floor(options.leafDensity * (2.5 + random() * 1.5) * (2.1 + random() * 0.6));
@@ -322,11 +326,41 @@ export function generateFractalTree(options: GenerateTreeOptions): TreeData {
     grow(lowStart, lowDir, options.baseLength * 0.62, startRadius * 0.58, 1);
   }
 
+  const canopyCore = highestBranchTip.clone().lerp(trunkCurve.getPointAt(0.78), 0.38);
+  pushLeafCluster(
+    canopyCore,
+    up.clone(),
+    Math.round(options.leafDensity * (12 + random() * 4)),
+    0.24 + random() * 0.08,
+    0.82,
+    1.04,
+    "C",
+  );
+
+  for (let halo = 0; halo < 3; halo += 1) {
+    const haloAngle = (halo / 3) * Math.PI * 2 + random() * 0.45;
+    const haloOffset = new THREE.Vector3(
+      Math.cos(haloAngle) * (0.18 + random() * 0.05),
+      (random() - 0.15) * 0.12,
+      Math.sin(haloAngle) * (0.18 + random() * 0.05),
+    );
+
+    pushLeafCluster(
+      canopyCore.clone().add(haloOffset),
+      up.clone().lerp(haloOffset.clone().normalize(), 0.28).normalize(),
+      Math.round(options.leafDensity * (7 + random() * 3)),
+      0.18 + random() * 0.05,
+      0.78,
+      0.98,
+      "C",
+    );
+  }
+
   const targetLeafCount = Math.max(120, options.leafTarget ?? Math.round(220 + options.leafDensity * 40));
   const zoneTargets = {
-    A: Math.round(targetLeafCount * 0.64),
-    B: Math.max(0, targetLeafCount - Math.round(targetLeafCount * 0.64)),
-    C: 0,
+    A: Math.round(targetLeafCount * 0.56),
+    B: Math.round(targetLeafCount * 0.28),
+    C: Math.max(0, targetLeafCount - Math.round(targetLeafCount * 0.56) - Math.round(targetLeafCount * 0.28)),
   };
 
   const shuffle = <T>(input: T[]) => {

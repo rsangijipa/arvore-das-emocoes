@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { Heart, Shuffle } from "lucide-react";
 
+import { QuoteMessageContent } from "@/components/ui/QuoteMessageContent";
 import type { Quote } from "@/types/quote";
 
 type MobileQuoteSheetProps = {
@@ -70,18 +71,13 @@ export function MobileQuoteSheet({
 
             {quote ? (
               <>
-                <p className="font-[family-name:var(--font-display)] text-[1.35rem] leading-[1.45] text-[#F8F2E9]">
-                  {quote.text}
-                </p>
-
-                <div className="mt-4 flex flex-wrap gap-2">
-                  <Tag label={quote.theme} />
-                  <Tag label={quote.tone} />
-                </div>
-
-                <div className="mt-3 min-h-5 text-[11px] text-[#DBCBB1]" aria-live="polite">
-                  {favoriteFeedback}
-                </div>
+                <QuoteMessageContent
+                  quote={quote}
+                  themeLabel={themeLabel}
+                  favoriteFeedback={favoriteFeedback}
+                  eyebrow="Mensagem do momento"
+                  compact
+                />
 
                 <div className="mt-5 grid grid-cols-2 gap-3">
                   <button
@@ -140,13 +136,5 @@ export function MobileQuoteSheet({
         )}
       </AnimatePresence>
     </div>
-  );
-}
-
-function Tag({ label }: { label: string }) {
-  return (
-    <span className="rounded-full border border-[rgba(240,225,200,0.1)] bg-[rgba(240,225,200,0.04)] px-3 py-1.5 text-[10px] tracking-[0.15em] uppercase text-[#E8DCC8]">
-      {label}
-    </span>
   );
 }

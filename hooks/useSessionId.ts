@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import { bindAnonymousSession } from "@/lib/firebase/client";
+import { migrateFavoritesBucket } from "@/lib/utils/local-favorites";
 
 const SESSION_STORAGE_KEY = "harvore.sessionId";
 
@@ -31,6 +32,11 @@ export function useSessionId() {
     void bindAnonymousSession((uid) => {
       if (cancelled) {
         return;
+      }
+
+      const previousSessionId = window.localStorage.getItem(SESSION_STORAGE_KEY);
+      if (previousSessionId && previousSessionId !== uid) {
+        migrateFavoritesBucket(previousSessionId, uid);
       }
 
       window.localStorage.setItem(SESSION_STORAGE_KEY, uid);

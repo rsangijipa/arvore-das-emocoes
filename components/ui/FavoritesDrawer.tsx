@@ -21,9 +21,11 @@ export function FavoritesDrawer({ open, quotes, onClose, onSelect }: FavoritesDr
           animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
           exit={{ opacity: 0, y: 10, filter: "blur(6px)" }}
           transition={{ duration: 0.35, ease: "easeOut" }}
-          className="hud-card pointer-events-auto absolute top-[152px] right-4 z-30 w-[min(420px,calc(100vw-2rem))] rounded-[24px] p-4 shadow-[0_24px_60px_rgba(0,0,0,0.45)] lg:right-6 xl:top-[166px]"
+          className="hud-card pointer-events-auto fixed inset-x-4 right-4 bottom-4 z-30 max-h-[62vh] rounded-[24px] p-4 shadow-[0_24px_60px_rgba(0,0,0,0.45)] lg:absolute lg:top-[152px] lg:right-6 lg:bottom-auto lg:w-[min(420px,calc(100vw-2rem))] xl:top-[166px]"
           aria-label="Frases favoritas"
         >
+          <div className="mx-auto mb-3 h-1 w-12 rounded-full bg-white/18 lg:hidden" />
+
           <div className="mb-4 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Heart className="h-4 w-4 text-[#F3D08A]" />
