@@ -4,10 +4,12 @@ import { useFrame } from "@react-three/fiber";
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import type { BranchCurve, RootCurve } from "@/lib/tree/generateTree";
+import type { QualityProfile } from "@/types/performance";
 
 type TreeTrunkProps = {
   trunk: BranchCurve;
   roots: RootCurve[];
+  qualityProfile: QualityProfile;
 };
 
 function createBarkMaterial({
@@ -123,7 +125,7 @@ function createBarkMaterial({
   return material;
 }
 
-export function TreeTrunk({ trunk, roots }: TreeTrunkProps) {
+export function TreeTrunk({ trunk, roots, qualityProfile }: TreeTrunkProps) {
   const groupRef = useRef<THREE.Group>(null);
   const trunkMaterial = useMemo(
     () => createBarkMaterial({ roughness: 0.84, aoDarken: 0.08, baseDarken: 0.52, noiseAmp: 0.034 }),
@@ -135,6 +137,7 @@ export function TreeTrunk({ trunk, roots }: TreeTrunkProps) {
   );
 
   const geometries = useMemo(() => {
+    const segFactor = qualityProfile === "safe" ? 0.62 : qualityProfile === "medium" ? 0.8 : 1;
     const baseWood = new THREE.Color("#4D2D1D");
     const midWood = new THREE.Color("#6A3F26");
     const highlightWood = new THREE.Color("#9A6A46");
@@ -198,17 +201,29 @@ export function TreeTrunk({ trunk, roots }: TreeTrunkProps) {
       return geom;
     };
 
-    const trunkGeom = createTaperedTube(trunk.curve, trunk.radiusBottom, trunk.radiusTop, 32, 42);
+    const trunkGeom = createTaperedTube(
+      trunk.curve,
+      trunk.radiusBottom,
+      trunk.radiusTop,
+      Math.max(12, Math.round(32 * segFactor)),
+      Math.max(16, Math.round(42 * segFactor)),
+    );
     paintWoodGradient(trunkGeom, 0.0);
 
     const rootGeoms = roots.map((root) => {
-      const geometry = createTaperedTube(root.curve, root.radiusBottom, root.radiusTop, 16, 22);
+      const geometry = createTaperedTube(
+        root.curve,
+        root.radiusBottom,
+        root.radiusTop,
+        Math.max(8, Math.round(16 * segFactor)),
+        Math.max(10, Math.round(22 * segFactor)),
+      );
       paintWoodGradient(geometry, 0.22);
       return geometry;
     });
 
     return { trunkGeom, rootGeoms };
-  }, [trunk, roots]);
+  }, [qualityProfile, roots, trunk]);
 
   useEffect(() => {
     return () => {

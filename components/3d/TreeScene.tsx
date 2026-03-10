@@ -283,12 +283,14 @@ function SceneContent({
       <fog attach="fog" args={["#A2CBE3", 15, 45]} />
 
       {/* O Sol Global - Céu Realista */}
-      <Sky
-        distance={450000}
-        sunPosition={[8, 12, 6]}
-        inclination={0.45} // Elevação do sol (um final de tarde)
-        azimuth={0.25}     // Ângulo horizontal
-      />
+      {quality.profile !== "safe" ? (
+        <Sky
+          distance={450000}
+          sunPosition={[8, 12, 6]}
+          inclination={0.45} // Elevação do sol (um final de tarde)
+          azimuth={0.25}     // Ângulo horizontal
+        />
+      ) : null}
 
       {/* 1. Iluminação Global (Preenche as sombras com um tom azulado calmo) */}
       <ambientLight intensity={1.2} color="#DCE8F5" />
@@ -299,7 +301,7 @@ function SceneContent({
         position={[8, 12, 6]} // Sol posicionado alto e à direita
         intensity={3.5}       // Força exata para não cegar a tela, mas ativar a translucidez
         color="#FFDFB0"       // Tom dourado
-        castShadow
+        castShadow={quality.profile !== "safe"}
         shadow-mapSize={quality.profile === "safe" ? [1024, 1024] : [2048, 2048]}
         shadow-camera-left={-8}
         shadow-camera-right={8}
@@ -321,14 +323,15 @@ function SceneContent({
       />
 
       <group ref={treeRef} position={[0, -1.2, 0]}>
-        <TreeTrunk trunk={treeData.trunk} roots={treeData.roots} />
-        <BranchInstances branches={treeData.branches} />
+        <TreeTrunk trunk={treeData.trunk} roots={treeData.roots} qualityProfile={quality.profile} />
+        <BranchInstances branches={treeData.branches} qualityProfile={quality.profile} />
         <LeafInstances
           leaves={leafNodes}
           quoteThemes={quoteThemes}
           activeTheme="all"
           reduceMotion={reduceMotion}
           focusActive={selectedLeaf !== null}
+          updateDivisor={quality.profile === "safe" ? 3 : quality.profile === "medium" ? 2 : 1}
           hoveredIndex={hoveredIndex}
           selectedIndex={selectedIndex}
           onHover={handleHover}
@@ -345,7 +348,7 @@ function SceneContent({
 
       <GroundTerrain />
 
-      {selectedLeaf ? (
+      {selectedLeaf && quality.profile !== "safe" ? (
         <EffectComposer multisampling={0}>
           <DepthOfField focusDistance={0.02} focalLength={0.02} bokehScale={0.9} height={420} />
         </EffectComposer>
@@ -383,11 +386,11 @@ export default function TreeScene({
 
   return (
     <Canvas
-      shadows={{ type: THREE.PCFSoftShadowMap }}
+      shadows={quality.profile === "safe" ? false : { type: THREE.PCFSoftShadowMap }}
       camera={{ position: [0, 1.2, 7.5], fov: 35 }}
       dpr={[1, quality.dpr]}
       gl={{
-        antialias: true,
+        antialias: quality.profile !== "safe",
         powerPreference: "high-performance",
         toneMapping: THREE.ACESFilmicToneMapping,
         toneMappingExposure: 0.75,

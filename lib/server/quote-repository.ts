@@ -17,11 +17,39 @@ import { TONES } from "@/types/quote";
 const interactionLog = new Map<string, InteractionPayload[]>();
 const favoritesBySession = new Map<string, Set<string>>();
 const QUOTE_CACHE_TTL_MS = 60_000;
+const FAVORITES_CACHE_TTL_MS = 30_000;
+const MAX_IN_MEMORY_SESSIONS = 400;
 
 let firestoreQuotesCache: {
   expiresAt: number;
   quotes: Quote[];
 } | null = null;
+
+const favoritesCache = new Map<string, { expiresAt: number; quoteIds: string[] }>();
+
+function trimSessionMap<T>(map: Map<string, T>, maxEntries: number) {
+  while (map.size > maxEntries) {
+    const firstKey = map.keys().next().value;
+    if (!firstKey) {
+      break;
+    }
+    map.delete(firstKey);
+  }
+}
+
+function sweepExpiredFavoritesCache(now = Date.now()) {
+  if (favoritesCache.size < MAX_IN_MEMORY_SESSIONS) {
+    return;
+  }
+
+  for (const [sessionId, entry] of favoritesCache.entries()) {
+    if (entry.expiresAt <= now) {
+      favoritesCache.delete(sessionId);
+    }
+  }
+
+  trimSessionMap(favoritesCache, MAX_IN_MEMORY_SESSIONS);
+}
 
 function activeQuotes(): Quote[] {
   return QUOTES.filter((quote) => quote.active);
@@ -129,41 +157,78 @@ export async function randomQuote(theme: ThemeFilter, excludeId?: string): Promi
 }
 
 export async function registerInteraction(payload: InteractionPayload): Promise<void> {
+  return registerInteractions([payload]);
+}
+
+export async function registerInteractions(payloads: InteractionPayload[]): Promise<void> {
+  if (payloads.length === 0) {
+    return;
+  }
+
   const db = getFirebaseAdminDb();
 
   if (db) {
     try {
-      await db.collection("user_interactions").add({
-        sessionId: payload.sessionId,
-        actionType: payload.actionType,
-        quoteId: payload.quoteId ?? null,
-        theme: payload.theme ?? "all",
-        createdAt: new Date().toISOString(),
-      });
+      const batch = db.batch();
+      for (const payload of payloads) {
+        const ref = db.collection("user_interactions").doc();
+        batch.set(ref, {
+          sessionId: payload.sessionId,
+          actionType: payload.actionType,
+          quoteId: payload.quoteId ?? null,
+          theme: payload.theme ?? "all",
+          createdAt: new Date().toISOString(),
+        });
+      }
+      await batch.commit();
       return;
     } catch {
       // Fallback em memoria para manter a aplicacao funcional sem Firebase.
     }
   }
 
-  const existing = interactionLog.get(payload.sessionId) ?? [];
-  interactionLog.set(payload.sessionId, [...existing, payload]);
+  for (const payload of payloads) {
+    const existing = interactionLog.get(payload.sessionId) ?? [];
+    const next = [...existing, payload];
+    const bounded = next.length > 200 ? next.slice(next.length - 200) : next;
+    interactionLog.set(payload.sessionId, bounded);
+  }
+
+  trimSessionMap(interactionLog, MAX_IN_MEMORY_SESSIONS);
 }
 
 export async function listFavorites(sessionId: string): Promise<string[]> {
   const db = getFirebaseAdminDb();
 
+  const now = Date.now();
+  sweepExpiredFavoritesCache(now);
+  const cached = favoritesCache.get(sessionId);
+  if (cached && cached.expiresAt > now) {
+    return cached.quoteIds;
+  }
+
   if (db) {
     try {
       const snapshot = await db.collection("user_favorites").doc(sessionId).get();
       const quoteIds = snapshot.data()?.quoteIds;
-      return Array.isArray(quoteIds) ? quoteIds.filter((id): id is string => typeof id === "string") : [];
+      const sanitized = Array.isArray(quoteIds) ? quoteIds.filter((id): id is string => typeof id === "string") : [];
+      favoritesCache.set(sessionId, {
+        expiresAt: now + FAVORITES_CACHE_TTL_MS,
+        quoteIds: sanitized,
+      });
+      return sanitized;
     } catch {
       // Fallback local caso o Firestore nao esteja disponivel.
     }
   }
 
-  return [...(favoritesBySession.get(sessionId) ?? new Set<string>())];
+  const local = [...(favoritesBySession.get(sessionId) ?? new Set<string>())];
+  favoritesCache.set(sessionId, {
+    expiresAt: now + FAVORITES_CACHE_TTL_MS,
+    quoteIds: local,
+  });
+  trimSessionMap(favoritesBySession, MAX_IN_MEMORY_SESSIONS);
+  return local;
 }
 
 export async function saveFavorite(payload: FavoritePayload): Promise<string[]> {
@@ -189,6 +254,12 @@ export async function saveFavorite(payload: FavoritePayload): Promise<string[]> 
         { merge: true },
       );
 
+      favoritesCache.set(payload.sessionId, {
+        expiresAt: Date.now() + FAVORITES_CACHE_TTL_MS,
+        quoteIds: next,
+      });
+      sweepExpiredFavoritesCache();
+
       return next;
     } catch {
       // Fallback local caso o Firestore nao esteja disponivel.
@@ -204,7 +275,14 @@ export async function saveFavorite(payload: FavoritePayload): Promise<string[]> 
   }
 
   favoritesBySession.set(payload.sessionId, sessionFavorites);
-  return [...sessionFavorites.values()];
+  const local = [...sessionFavorites.values()];
+  favoritesCache.set(payload.sessionId, {
+    expiresAt: Date.now() + FAVORITES_CACHE_TTL_MS,
+    quoteIds: local,
+  });
+  trimSessionMap(favoritesBySession, MAX_IN_MEMORY_SESSIONS);
+  sweepExpiredFavoritesCache();
+  return local;
 }
 
 export async function hasTheme(theme: string): Promise<boolean> {

@@ -4,12 +4,14 @@ import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { BranchCurve } from "@/lib/tree/generateTree";
+import type { QualityProfile } from "@/types/performance";
 
 type BranchInstancesProps = {
   branches: BranchCurve[];
+  qualityProfile: QualityProfile;
 };
 
-export function BranchInstances({ branches }: BranchInstancesProps) {
+export function BranchInstances({ branches, qualityProfile }: BranchInstancesProps) {
   const material = useMemo(
     () => {
       const branchMaterial = new THREE.MeshStandardMaterial({
@@ -111,9 +113,13 @@ export function BranchInstances({ branches }: BranchInstancesProps) {
       return geom;
     };
 
+    const segFactor = qualityProfile === "safe" ? 0.62 : qualityProfile === "medium" ? 0.8 : 1;
+
     const geometriesToMerge = branches.map((b) => {
-      const radSeg = b.depth <= 1 ? 16 : b.depth <= 3 ? 12 : 8;
-      const tubSeg = b.depth <= 1 ? 24 : b.depth <= 3 ? 16 : 12;
+      const radSegBase = b.depth <= 1 ? 16 : b.depth <= 3 ? 12 : 8;
+      const tubSegBase = b.depth <= 1 ? 24 : b.depth <= 3 ? 16 : 12;
+      const radSeg = Math.max(6, Math.round(radSegBase * segFactor));
+      const tubSeg = Math.max(8, Math.round(tubSegBase * segFactor));
       const geom = createTaperedTube(b.curve, b.radiusBottom, b.radiusTop, radSeg, tubSeg);
       paintBranchGradient(geom, b.depth);
       return geom;
@@ -126,7 +132,7 @@ export function BranchInstances({ branches }: BranchInstancesProps) {
     const merged = mergeGeometries(geometriesToMerge, false);
     geometriesToMerge.forEach((geometry) => geometry.dispose());
     return merged;
-  }, [branches]);
+  }, [branches, qualityProfile]);
 
   useEffect(() => {
     return () => {

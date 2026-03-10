@@ -13,6 +13,7 @@ type LeafInstancesProps = {
   activeTheme?: ThemeFilter;
   reduceMotion?: boolean;
   focusActive?: boolean;
+  updateDivisor?: number;
   hoveredIndex: number | null;
   selectedIndex: number | null;
   onHover: (index: number | null) => void;
@@ -40,12 +41,14 @@ export function LeafInstances({
   activeTheme,
   reduceMotion = false,
   focusActive = false,
+  updateDivisor = 1,
   hoveredIndex,
   selectedIndex,
   onHover,
   onSelect,
 }: LeafInstancesProps) {
   const meshRefs = useRef<Array<THREE.InstancedMesh | null>>([]);
+  const frameCounterRef = useRef(0);
   const frameStateRef = useRef({
     dummy: new THREE.Object3D(),
     windRotation: new THREE.Quaternion(),
@@ -239,6 +242,13 @@ export function LeafInstances({
   }, [geometries, material]);
 
   useFrame(({ clock }) => {
+    frameCounterRef.current += 1;
+    const stableFocus = hoveredIndex !== null || selectedIndex !== null;
+    const divisor = stableFocus ? 1 : Math.max(1, updateDivisor);
+    if (divisor > 1 && frameCounterRef.current % divisor !== 0) {
+      return;
+    }
+
     const time = clock.elapsedTime;
     const { dummy, windRotation, rollRotation } = frameStateRef.current;
 
