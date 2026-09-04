@@ -1,28 +1,48 @@
 import * as THREE from "three";
 
+import type { SceneVariant } from "@/lib/theme/scene-variant";
+
 /**
  * Panorama equirretangular 360 graus desenhado em SVG.
- *
- * A imagem e gerada por formula para ficar PERFEITAMENTE emendavel: as colinas
- * usam somas de senos cujos periodos dividem a largura, e qualquer nuvem que
- * encosta na borda e desenhada tambem do outro lado. Assim, ao girar a camera,
- * nao existe costura visivel.
- *
- * Layout (proporcao 2:1, obrigatoria em equirretangular):
- *   y = 0          -> zenite
- *   y = altura / 2 -> linha do horizonte
- *   y = altura     -> nadir
+ * Aceita uma variante sazonal para ajustar o gradiente do céu.
  */
 
 const VIEW_WIDTH = 4096;
 const VIEW_HEIGHT = 2048;
 const HORIZON = VIEW_HEIGHT / 2;
 
-/** cor do horizonte: usada tambem pela neblina da cena, para casar tudo */
 export const HORIZON_COLOR = "#E6F2F8";
 export const SKY_TOP_COLOR = "#3E92D8";
 export const GRASS_NEAR_COLOR = "#2F6D25";
 export const GRASS_FAR_COLOR = "#8FC05A";
+
+/** Paletas de céu por variante */
+const SKY_PALETTES: Record<SceneVariant, { top: string; mid: string; low: string; horizon: string }> = {
+  morning: {
+    top: "#1A5FA8",
+    mid: "#4A9AD4",
+    low: "#A8CDE8",
+    horizon: "#D8EAF5",
+  },
+  day: {
+    top: "#2A7FCE",
+    mid: "#3E92D8",
+    low: "#93C9EF",
+    horizon: HORIZON_COLOR,
+  },
+  evening: {
+    top: "#8A3A20",
+    mid: "#D06A28",
+    low: "#F0A848",
+    horizon: "#F5C878",
+  },
+  night: {
+    top: "#060C18",
+    mid: "#0E1830",
+    low: "#1A2848",
+    horizon: "#1C2E40",
+  },
+};
 
 type Cloud = {
   x: number;
@@ -87,46 +107,63 @@ function hillPath(seedPhase: number, amplitude: number, baseline: number, harmon
   return `M -2,${baseline + 260} L ${points.join(" L ")} L ${VIEW_WIDTH + 2},${baseline + 260} Z`;
 }
 
-export function createPanoramaSvg(): string {
+export function createPanoramaSvg(variant: SceneVariant = "day"): string {
+  const sky = SKY_PALETTES[variant];
+  const isNight = variant === "night";
+
   const clouds: string[] = [];
 
-  for (const cloud of CLOUDS) {
-    const positions = [cloud.x];
-    // repete a nuvem do outro lado quando ela encosta na emenda
-    if (cloud.x < 400) {
-      positions.push(cloud.x + VIEW_WIDTH);
-    }
-    if (cloud.x > VIEW_WIDTH - 400) {
-      positions.push(cloud.x - VIEW_WIDTH);
-    }
+  // nuvens só aparecem em dia/manhã; noite ganha estrelas, entardecer fica limpo
+  if (!isNight && variant !== "evening") {
+    for (const cloud of CLOUDS) {
+      const positions = [cloud.x];
+      if (cloud.x < 400) positions.push(cloud.x + VIEW_WIDTH);
+      if (cloud.x > VIEW_WIDTH - 400) positions.push(cloud.x - VIEW_WIDTH);
 
-    for (const x of positions) {
-      clouds.push(
-        `<path d="${cloudPath(x, cloud.y, cloud.scale)}" fill="url(#cloudFill)" opacity="${cloud.opacity}"/>`,
-      );
-      clouds.push(
-        `<ellipse cx="${x}" cy="${cloud.y - 4}" rx="${300 * cloud.scale}" ry="${16 * cloud.scale}" fill="#FFFFFF" opacity="${cloud.opacity * 0.5}"/>`,
-      );
+      for (const x of positions) {
+        clouds.push(
+          `<path d="${cloudPath(x, cloud.y, cloud.scale)}" fill="url(#cloudFill)" opacity="${cloud.opacity}"/>`,
+        );
+        clouds.push(
+          `<ellipse cx="${x}" cy="${cloud.y - 4}" rx="${300 * cloud.scale}" ry="${16 * cloud.scale}" fill="#FFFFFF" opacity="${cloud.opacity * 0.5}"/>`,
+        );
+      }
+    }
+  }
+
+  // estrelas aleatórias na variante noite
+  const stars: string[] = [];
+  if (isNight) {
+    // LCG determinístico para posições estáveis
+    let rng = 0xdeadbeef;
+    const rand = () => {
+      rng = (Math.imul(1664525, rng) + 1013904223) | 0;
+      return (rng >>> 0) / 4294967296;
+    };
+    for (let i = 0; i < 280; i++) {
+      const sx = rand() * VIEW_WIDTH;
+      const sy = rand() * (HORIZON - 40);
+      const sr = 1.2 + rand() * 2.8;
+      const op = 0.4 + rand() * 0.6;
+      stars.push(`<circle cx="${sx.toFixed(0)}" cy="${sy.toFixed(0)}" r="${sr.toFixed(1)}" fill="#FFFFFF" opacity="${op.toFixed(2)}"/>`);
     }
   }
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${VIEW_WIDTH}" height="${VIEW_HEIGHT}" viewBox="0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}">
   <defs>
     <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#2A7FCE"/>
-      <stop offset="0.30" stop-color="${SKY_TOP_COLOR}"/>
-      <stop offset="0.62" stop-color="#63AEE6"/>
-      <stop offset="0.82" stop-color="#93C9EF"/>
-      <stop offset="0.94" stop-color="#C9E4F5"/>
-      <stop offset="1" stop-color="${HORIZON_COLOR}"/>
+      <stop offset="0" stop-color="${sky.top}"/>
+      <stop offset="0.32" stop-color="${sky.mid}"/>
+      <stop offset="0.72" stop-color="${sky.low}"/>
+      <stop offset="1" stop-color="${sky.horizon}"/>
     </linearGradient>
 
     <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#DCEBC8"/>
-      <stop offset="0.035" stop-color="${GRASS_FAR_COLOR}"/>
-      <stop offset="0.16" stop-color="#6FAE44"/>
-      <stop offset="0.45" stop-color="#4C8C31"/>
-      <stop offset="1" stop-color="${GRASS_NEAR_COLOR}"/>
+      <stop offset="0" stop-color="${isNight ? "#1A2818" : "#DCEBC8"}"/>
+      <stop offset="0.035" stop-color="${isNight ? "#1E3018" : GRASS_FAR_COLOR}"/>
+      <stop offset="0.16" stop-color="${isNight ? "#1C2C14" : "#6FAE44"}"/>
+      <stop offset="0.45" stop-color="${isNight ? "#162210" : "#4C8C31"}"/>
+      <stop offset="1" stop-color="${isNight ? "#0E1A0C" : GRASS_NEAR_COLOR}"/>
     </linearGradient>
 
     <radialGradient id="cloudFill" cx="0.5" cy="0.75" r="0.75">
@@ -136,30 +173,29 @@ export function createPanoramaSvg(): string {
     </radialGradient>
 
     <linearGradient id="haze" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="${HORIZON_COLOR}" stop-opacity="0"/>
-      <stop offset="0.68" stop-color="${HORIZON_COLOR}" stop-opacity="0.48"/>
-      <stop offset="1" stop-color="${HORIZON_COLOR}" stop-opacity="0.86"/>
+      <stop offset="0" stop-color="${sky.horizon}" stop-opacity="0"/>
+      <stop offset="0.68" stop-color="${sky.horizon}" stop-opacity="0.48"/>
+      <stop offset="1" stop-color="${sky.horizon}" stop-opacity="0.86"/>
     </linearGradient>
 
     <linearGradient id="groundHaze" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="${HORIZON_COLOR}" stop-opacity="0.85"/>
-      <stop offset="1" stop-color="${HORIZON_COLOR}" stop-opacity="0"/>
+      <stop offset="0" stop-color="${sky.horizon}" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="${sky.horizon}" stop-opacity="0"/>
     </linearGradient>
   </defs>
 
   <rect x="0" y="0" width="${VIEW_WIDTH}" height="${HORIZON + 2}" fill="url(#sky)"/>
   <rect x="0" y="${HORIZON}" width="${VIEW_WIDTH}" height="${HORIZON}" fill="url(#ground)"/>
 
-  <!-- colinas distantes, da mais clara (longe) para a mais escura (perto) -->
-  <path d="${hillPath(0.7, 34, HORIZON + 2, [3, 7, 13])}" fill="#8FB878" opacity="0.62"/>
-  <path d="${hillPath(2.3, 23, HORIZON + 9, [5, 11, 19])}" fill="#639C4C" opacity="0.8"/>
-  <path d="${hillPath(4.1, 14, HORIZON + 17, [2, 9, 17])}" fill="#4E8C39" opacity="0.92"/>
+  ${stars.length > 0 ? `<g>${stars.join("")}</g>` : ""}
 
-  <!-- neblina de distancia: dissolve as colinas no horizonte -->
+  <path d="${hillPath(0.7, 34, HORIZON + 2, [3, 7, 13])}" fill="${isNight ? "#162812" : "#8FB878"}" opacity="0.62"/>
+  <path d="${hillPath(2.3, 23, HORIZON + 9, [5, 11, 19])}" fill="${isNight ? "#122010" : "#639C4C"}" opacity="0.8"/>
+  <path d="${hillPath(4.1, 14, HORIZON + 17, [2, 9, 17])}" fill="${isNight ? "#0E1A0C" : "#4E8C39"}" opacity="0.92"/>
+
   <rect x="0" y="${HORIZON - 60}" width="${VIEW_WIDTH}" height="62" fill="url(#haze)"/>
   <rect x="0" y="${HORIZON}" width="${VIEW_WIDTH}" height="90" fill="url(#groundHaze)"/>
 
-  <!-- nuvens por ultimo: elas estao acima e a frente das colinas -->
   <g>${clouds.join("")}</g>
 </svg>`;
 }
@@ -168,7 +204,7 @@ export function createPanoramaSvg(): string {
  * Rasteriza o SVG e devolve a textura pronta para `scene.background`.
  * Resolucao menor nos perfis leves: a imagem e so gradiente, quase nao perde.
  */
-export function loadPanoramaTexture(resolution: 1024 | 2048): Promise<THREE.Texture> {
+export function loadPanoramaTexture(resolution: 1024 | 2048, variant: SceneVariant = "day"): Promise<THREE.Texture> {
   return new Promise((resolve, reject) => {
     const image = new Image();
     image.decoding = "async";
@@ -189,7 +225,7 @@ export function loadPanoramaTexture(resolution: 1024 | 2048): Promise<THREE.Text
 
     image.onerror = () => reject(new Error("Nao foi possivel gerar o panorama"));
 
-    const svg = createPanoramaSvg()
+    const svg = createPanoramaSvg(variant)
       .replace(`width="${VIEW_WIDTH}"`, `width="${resolution * 2}"`)
       .replace(`height="${VIEW_HEIGHT}"`, `height="${resolution}"`);
 

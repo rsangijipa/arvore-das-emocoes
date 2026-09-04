@@ -23,3 +23,6 @@ export function themeLabel(slug: ThemeSlug | string): string {
 export function toneLabel(tone: Tone | string): string {
   return TONE_LABELS[tone as Tone] ?? String(tone);
 }
+
+/** Rótulo fixo do card de mensagem — centralizado aqui para facilitar i18n */
+export const LEAF_CARD_FOUND_LABEL = "Mensagem encontrada";

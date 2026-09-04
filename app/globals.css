@@ -25,16 +25,26 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans), "Segoe UI", sans-serif;
+  /* elimina o flash azul de toque em Android/iOS WebView */
+  -webkit-tap-highlight-color: transparent;
 }
 
 button {
   cursor: pointer;
+  /* impede zoom acidental por duplo-toque em iOS */
+  touch-action: manipulation;
 }
 
 button:focus-visible,
 [role="button"]:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
+}
+
+/* active state para touch: feedback imediato sem hover */
+button:active:not(:disabled),
+[role="button"]:active {
+  opacity: 0.82;
 }
 
 * {
@@ -55,6 +65,8 @@ button:focus-visible,
   -ms-overflow-style: none;
   overflow-x: auto;
   overscroll-behavior-x: contain;
+  /* rolagem inercial em iOS */
+  -webkit-overflow-scrolling: touch;
   mask-image: linear-gradient(to right, transparent 0, #000 12px, #000 calc(100% - 22px), transparent 100%);
 }
 
@@ -80,6 +92,9 @@ button:focus-visible,
   background: var(--hud-surface-soft);
   border-radius: 9999px;
   color: var(--hud-text);
+  /* alvo mínimo de 44 × 44 px recomendado pelo HIG/Material */
+  min-height: 44px;
+  min-width: 44px;
 }
 
 .hud-card {
@@ -98,6 +113,7 @@ button:focus-visible,
   background: var(--hud-primary-bg);
   color: var(--hud-primary-text);
   border-radius: 9999px;
+  min-height: 44px;
 }
 
 .hud-btn-secondary {
@@ -105,6 +121,7 @@ button:focus-visible,
   background: rgba(255, 255, 255, 0.1);
   color: var(--hud-text);
   border-radius: 9999px;
+  min-height: 44px;
 }
 
 .hud-btn-ghost {
@@ -112,6 +129,7 @@ button:focus-visible,
   background: transparent;
   color: var(--hud-text);
   border-radius: 9999px;
+  min-height: 44px;
 }
 
 .hud-btn-primary:hover {
@@ -136,11 +154,40 @@ button:focus-visible,
   background: rgba(255, 255, 255, 0.05);
   border-radius: 1rem;
   color: var(--hud-text);
+  /* alvo de toque mínimo: padding generoso garante 48 px de altura */
+  min-height: 48px;
 }
 
 .hud-list-item:hover {
   border-color: rgba(255, 255, 255, 0.24);
   background: rgba(255, 255, 255, 0.1);
+}
+
+/* active state explícito para touch em list items */
+.hud-list-item:active {
+  background: rgba(255, 255, 255, 0.13);
+}
+
+/*
+  Botão de remoção inline no FavoritesDrawer.
+  Em dispositivos touch (pointer: coarse) não existe "hover" real, então o
+  botão fica sempre visível. Em mouse ele aparece apenas no hover do item.
+*/
+@media (pointer: fine) {
+  .remove-btn {
+    opacity: 0;
+  }
+
+  .group:hover .remove-btn,
+  .remove-btn:focus-visible {
+    opacity: 1;
+  }
+}
+
+@media (pointer: coarse) {
+  .remove-btn {
+    opacity: 1;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

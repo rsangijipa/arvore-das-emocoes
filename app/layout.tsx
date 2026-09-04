@@ -6,11 +6,14 @@ import { ServiceWorkerRegistration } from "@/components/pwa/ServiceWorkerRegistr
 import "./globals.css";
 
 // tres familias para as mensagens: cada folha traz uma caligrafia diferente
+// preload: true garante que o Next.js injete <link rel="preload"> no <head>
+// para evitar o flash de fonte genérica ao abrir o card pela primeira vez
 const display = Cormorant_Garamond({
   variable: "--font-display",
   subsets: ["latin"],
   weight: ["500", "600", "700"],
   display: "swap",
+  preload: true,
 });
 
 const displayAlt = Playfair_Display({
@@ -18,6 +21,7 @@ const displayAlt = Playfair_Display({
   subsets: ["latin"],
   weight: ["500", "600"],
   display: "swap",
+  preload: true,
 });
 
 const hand = Caveat({
@@ -25,6 +29,7 @@ const hand = Caveat({
   subsets: ["latin"],
   weight: ["500", "600", "700"],
   display: "swap",
+  preload: true,
 });
 
 const sans = Plus_Jakarta_Sans({

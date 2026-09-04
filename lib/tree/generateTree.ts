@@ -521,7 +521,9 @@ export function generateTree(options: GenerateTreeOptions): TreeData {
   }
 
   // ------------------------------------------- selecao das folhas-mensagem
-  const messageLeaves = pickMessageLeaves(rawLeaves, options.messageLeafCount, random);
+  // o count é calculado dinamicamente com base no raio real da copa
+  const dynamicMessageCount = Math.max(6, Math.min(14, Math.round(crownRadius * 2.5)));
+  const messageLeaves = pickMessageLeaves(rawLeaves, dynamicMessageCount, random);
   const messageSources = new Set(messageLeaves.map((leaf) => leaf.position));
 
   const commonPool = rawLeaves.filter((leaf) => !messageSources.has(leaf.position));

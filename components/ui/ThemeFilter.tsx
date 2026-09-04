@@ -15,7 +15,7 @@ export function ThemeFilter({ themes, value, onChange }: ThemeFilterProps) {
     <div
       role="radiogroup"
       aria-label="Tema das mensagens"
-      className="hud-scroller flex items-center gap-1.5 whitespace-nowrap pr-3 pb-0.5"
+      className="hud-scroller flex items-center gap-2 whitespace-nowrap pr-3 pb-1"
     >
       <FilterChip
         label="Todos"
@@ -49,12 +49,17 @@ function FilterChip({
 }) {
   return (
     <motion.button
-      whileTap={{ scale: 0.97 }}
+      whileTap={{ scale: 0.95 }}
       type="button"
       role="radio"
       aria-checked={active}
       onClick={onClick}
-      className="relative h-8 shrink-0 rounded-full px-3.5 text-[11px] font-semibold tracking-[0.08em] transition"
+      /*
+       * h-9 (36 px) + padding vertical garante área de toque ≥ 44 px via
+       * min-height herdado de button em globals.css.
+       * px-4 em vez de px-3.5 dá mais espaço para o texto + ponto de cor.
+       */
+      className="relative flex h-9 shrink-0 items-center rounded-full px-4 text-[11.5px] font-semibold tracking-[0.06em] transition"
       style={{
         border: `1px solid ${active ? `${color}70` : "rgba(209, 220, 236, 0.14)"}`,
         background: active ? `${color}2E` : "rgba(255, 255, 255, 0.04)",
@@ -65,7 +70,7 @@ function FilterChip({
       {/* ponto de cor: identifica o tema mesmo quando o chip esta inativo */}
       <span
         aria-hidden
-        className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle"
+        className="mr-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full align-middle"
         style={{ background: color, opacity: active ? 1 : 0.5 }}
       />
       {label}

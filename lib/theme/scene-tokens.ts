@@ -18,8 +18,16 @@ export const SKY_SUN_POSITION: [number, number, number] = [6, 22, 10];
 /** deslocamento angular do sol em relacao a camera (rad) */
 export const SUN_CAMERA_YAW = 0.62;
 
-/** quantidade de folhas que carregam mensagem */
+/** quantidade máxima de folhas que carregam mensagem */
 export const MESSAGE_LEAF_COUNT = 10;
+
+/**
+ * Calcula quantas folhas-mensagem cabem bem em uma copa de dado raio.
+ * Clampado entre 6 e 14 para garantir variedade sem superlotação.
+ */
+export function calcMessageLeafCount(crownRadius: number): number {
+  return Math.max(6, Math.min(14, Math.round(crownRadius * 2.5)));
+}
 
 export const SCENE_QUALITY_CONFIGS: Record<QualityProfile, QualityConfig> = {
   high: {

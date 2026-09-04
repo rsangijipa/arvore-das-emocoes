@@ -21,6 +21,8 @@ type FoliageProps = {
   hiddenMessageIndex: number | null;
   hoveredMessageIndex: number | null;
   readMessageIndices: number[];
+  /** boost emissivo sazonal (ex: noite = halos mais brilhantes) */
+  leafEmissiveBoost: number;
   onHoverMessage: (index: number | null) => void;
   onSelectMessage: (index: number) => void;
 };
@@ -97,6 +99,7 @@ export function Foliage({
   hiddenMessageIndex,
   hoveredMessageIndex,
   readMessageIndices,
+  leafEmissiveBoost,
   onHoverMessage,
   onSelectMessage,
 }: FoliageProps) {
@@ -372,6 +375,10 @@ export function Foliage({
     messageMaterial.uniforms.uSunDirView.value.copy(commonMaterial.uniforms.uSunDirView.value);
 
     // halos pulsando devagar, como vaga-lumes
+    // a opacidade alvo é 0 quando a folha está voando e volta suavemente
+    // (lerp a cada frame) para evitar o corte abrupto no retorno
+    // leafEmissiveBoost aumenta a intensidade do halo à noite/entardecer
+    const haloBase = 0.5 + leafEmissiveBoost * 0.6;
     for (let index = 0; index < haloRefs.current.length; index += 1) {
       const sprite = haloRefs.current[index];
       if (!sprite) {
@@ -381,10 +388,17 @@ export function Foliage({
       const hidden = hiddenMessageIndex === index;
       const pulse = 0.82 + Math.sin(time * 1.15 + index * 1.9) * 0.18;
       const hover = hoveredMessageIndex === index ? 1.45 : 1;
-      const scale = hidden ? 0 : 0.42 * pulse * hover;
 
-      sprite.scale.set(scale, scale, scale);
-      (sprite.material as THREE.SpriteMaterial).opacity = hidden ? 0 : 0.5 * pulse * hover;
+      const targetOpacity = hidden ? 0 : haloBase * pulse * hover;
+      const targetScale   = hidden ? 0 : (0.42 + leafEmissiveBoost * 0.1) * pulse * hover;
+
+      const mat = sprite.material as THREE.SpriteMaterial;
+
+      const lerpSpeed = mat.opacity > targetOpacity ? 0.18 : 0.06;
+      mat.opacity = THREE.MathUtils.lerp(mat.opacity, targetOpacity, lerpSpeed);
+
+      const currentScale = sprite.scale.x;
+      sprite.scale.setScalar(THREE.MathUtils.lerp(currentScale, targetScale, lerpSpeed));
     }
   });
 

@@ -57,4 +57,10 @@ export const QUOTES: Quote[] = [
   { id: "q052", text: "Seu foco melhora quando você respeita seus limites.", theme: "foco", tone: "acolhedor", active: true, createdAt: now, updatedAt: now },
   { id: "q053", text: "A esperança não grita, ela permanece.", theme: "esperanca", tone: "poetico", active: true, createdAt: now, updatedAt: now },
   { id: "q054", text: "Você já é suficiente para começar de novo hoje.", theme: "recomeco", tone: "encorajador", active: true, createdAt: now, updatedAt: now },
+  { id: "q055", text: "Você tem o que é preciso para começar agora.", theme: "forca", tone: "energizante", active: true, createdAt: now, updatedAt: now },
+  { id: "q056", text: "Cada passo dado com intenção carrega potência.", theme: "foco", tone: "energizante", active: true, createdAt: now, updatedAt: now },
+  { id: "q057", text: "O movimento que você faz hoje abre o caminho de amanhã.", theme: "recomeco", tone: "energizante", active: true, createdAt: now, updatedAt: now },
+  { id: "q058", text: "A sua energia renasce quando você confia no próximo passo.", theme: "esperanca", tone: "energizante", active: true, createdAt: now, updatedAt: now },
+  { id: "q059", text: "Levantar uma vez a mais é tudo que a vida pede.", theme: "forca", tone: "energizante", active: true, createdAt: now, updatedAt: now },
+  { id: "q060", text: "Quando você age, o mundo começa a responder.", theme: "foco", tone: "energizante", active: true, createdAt: now, updatedAt: now },
 ];

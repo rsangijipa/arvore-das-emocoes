@@ -171,8 +171,8 @@ export function LeafSvg({ id, className }: LeafSvgProps) {
             opacity="0.12"
           />
 
-          {/* pigmentacao irregular */}
-          <g>
+          {/* pigmentacao irregular — dentro do clipPath da lâmina para não transbordar */}
+          <g clipPath={`url(#${id}-clip)`}>
             {blotches.map((blotch, index) => (
               <ellipse
                 key={`blotch-${index}`}
