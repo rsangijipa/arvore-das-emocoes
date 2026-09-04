@@ -12,25 +12,26 @@ type ThemeFilterProps = {
 
 export function ThemeFilter({ themes, value, onChange }: ThemeFilterProps) {
   return (
-    <div className="flex w-full items-center gap-2 sm:gap-3">
-      <span className="shrink-0 text-[10px] tracking-[0.18em] uppercase text-white/55">Tema</span>
-      <div className="flex flex-1 items-center gap-2 overflow-x-auto whitespace-nowrap pr-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div
+      role="radiogroup"
+      aria-label="Tema das mensagens"
+      className="hud-scroller flex items-center gap-1.5 whitespace-nowrap pr-3 pb-0.5"
+    >
+      <FilterChip
+        label="Todos"
+        active={value === "all"}
+        onClick={() => onChange("all")}
+        color="#9FB4C8"
+      />
+      {themes.map((theme) => (
         <FilterChip
-          label="Todos"
-          active={value === "all"}
-          onClick={() => onChange("all")}
-          color="#9FB4C8"
+          key={theme.slug}
+          label={theme.label}
+          active={value === theme.slug}
+          onClick={() => onChange(theme.slug)}
+          color={theme.color}
         />
-        {themes.map((theme) => (
-          <FilterChip
-            key={theme.slug}
-            label={theme.label}
-            active={value === theme.slug}
-            onClick={() => onChange(theme.slug)}
-            color={theme.color}
-          />
-        ))}
-      </div>
+      ))}
     </div>
   );
 }
@@ -48,21 +49,25 @@ function FilterChip({
 }) {
   return (
     <motion.button
-      whileTap={{ scale: 0.98 }}
-      whileHover={{ y: -1 }}
+      whileTap={{ scale: 0.97 }}
       type="button"
-      aria-pressed={active}
+      role="radio"
+      aria-checked={active}
       onClick={onClick}
-      className={`hud-pill h-9 shrink-0 px-4 text-[10px] font-semibold tracking-[0.14em] uppercase transition sm:text-[11px] ${active
-        ? "shadow-[0_4px_12px_rgba(0,0,0,0.15)]"
-        : "hover:bg-white/5"
-        }`}
+      className="relative h-8 shrink-0 rounded-full px-3.5 text-[11px] font-semibold tracking-[0.08em] transition"
       style={{
-        borderColor: active ? `${color}60` : "rgba(209, 220, 236, 0.15)",
-        background: active ? `${color}25` : "rgba(22, 31, 46, 0.4)",
-        color: active ? "#F8F4EA" : "#C4D0E0",
+        border: `1px solid ${active ? `${color}70` : "rgba(209, 220, 236, 0.14)"}`,
+        background: active ? `${color}2E` : "rgba(255, 255, 255, 0.04)",
+        color: active ? "#F8F4EA" : "#B6C4D6",
+        boxShadow: active ? `0 0 0 1px ${color}22, 0 4px 14px ${color}20` : "none",
       }}
     >
+      {/* ponto de cor: identifica o tema mesmo quando o chip esta inativo */}
+      <span
+        aria-hidden
+        className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full align-middle"
+        style={{ background: color, opacity: active ? 1 : 0.5 }}
+      />
       {label}
     </motion.button>
   );

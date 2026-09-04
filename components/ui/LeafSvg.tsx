@@ -2,177 +2,252 @@
 
 import { useMemo } from "react";
 
+import {
+  buildLeafPalette,
+  createLeafRandom,
+  hashLeafId,
+  LEAF_MIDRIB,
+  LEAF_MIDRIB_HIGHLIGHT,
+  LEAF_OUTLINE,
+  LEAF_VEINLETS_LOWER,
+  LEAF_VEINLETS_UPPER,
+  LEAF_VEIN_MESH,
+  LEAF_VEINS_LOWER,
+  LEAF_VEINS_UPPER,
+  LEAF_VIEW_HEIGHT,
+  LEAF_VIEW_WIDTH,
+} from "@/lib/tree/leafArtwork";
+
 /**
- * Folha vetorial de alta resolucao.
+ * Folha vetorial de alta definicao.
  *
- * A silhueta e as nervuras sao geradas por formula (mesma familia de curvas da
- * folha 3D), entao a folha escala para qualquer tamanho sem perder definicao —
- * que e justamente o ponto fraco de exibir a malha 3D em close.
+ * A silhueta, as nervuras e a paleta vem de `lib/tree/leafArtwork`, o mesmo
+ * modulo que gera a textura das folhas-mensagem na copa: a folha que o usuario
+ * clica e a folha que abre na tela.
  */
 
-const VIEW_WIDTH = 1000;
-const VIEW_HEIGHT = 440;
-const CENTER_Y = 220;
-const BASE_X = 46;
-const TIP_X = 968;
-const MAX_HALF = 168;
-
-/** meia-altura da lamina em t (0 = base, 1 = ponta) */
-function halfHeight(t: number, ripplePhase: number, rippleAmount: number) {
-  const body = Math.pow(Math.sin(Math.PI * Math.pow(t, 0.6)), 0.8);
-  const ripple = 1 + rippleAmount * Math.sin(t * Math.PI * 10 + ripplePhase);
-  return MAX_HALF * body * ripple;
+/** tinta legivel da mensagem para esta folha — usada pelo card */
+export function leafInkColor(id: string) {
+  return buildLeafPalette(hashLeafId(id)).ink;
 }
 
-function buildOutline(samples = 90) {
-  const points: string[] = [];
-
-  for (let index = 0; index <= samples; index += 1) {
-    const t = index / samples;
-    const x = BASE_X + t * (TIP_X - BASE_X);
-    points.push(`${x.toFixed(1)},${(CENTER_Y - halfHeight(t, 0, 0.018)).toFixed(1)}`);
-  }
-
-  // borda inferior levemente diferente: folha real nao e simetrica
-  for (let index = samples; index >= 0; index -= 1) {
-    const t = index / samples;
-    const x = BASE_X + t * (TIP_X - BASE_X);
-    points.push(`${x.toFixed(1)},${(CENTER_Y + halfHeight(t, 1.7, 0.024) * 1.02).toFixed(1)}`);
-  }
-
-  return `M ${points.join(" L ")} Z`;
-}
-
-function buildVeins(count = 9) {
-  const veins: string[] = [];
-
-  for (let index = 1; index <= count; index += 1) {
-    const t = 0.08 + (index / (count + 1)) * 0.84;
-    const startX = BASE_X + t * (TIP_X - BASE_X);
-    const reach = (1 - t) * 0.62 + 0.16;
-
-    for (const side of [-1, 1] as const) {
-      const half = halfHeight(t, side < 0 ? 0 : 1.7, 0.02) * 0.88;
-      const endX = startX + (TIP_X - startX) * reach * 0.72;
-      const endY = CENTER_Y + side * half;
-      const controlX = startX + (endX - startX) * 0.34;
-      const controlY = CENTER_Y + side * half * 0.42;
-
-      veins.push(
-        `M ${startX.toFixed(1)} ${CENTER_Y} Q ${controlX.toFixed(1)} ${controlY.toFixed(1)} ${endX.toFixed(1)} ${endY.toFixed(1)}`,
-      );
-    }
-  }
-
-  return veins;
-}
+// -------------------------------------------------------------- componente
 
 export type LeafSvgProps = {
-  /** id unico para os defs (permite mais de uma folha na pagina) */
+  /** id unico: define os defs locais E sorteia o tom terroso desta folha */
   id: string;
   className?: string;
 };
 
 export function LeafSvg({ id, className }: LeafSvgProps) {
-  const outline = useMemo(() => buildOutline(), []);
-  const veins = useMemo(() => buildVeins(), []);
-  const midrib = `M 2 ${CENTER_Y + 4} C 18 ${CENTER_Y + 2} 32 ${CENTER_Y} ${BASE_X} ${CENTER_Y - 1} L ${TIP_X} ${CENTER_Y}`;
+  const seed = useMemo(() => hashLeafId(id), [id]);
+  const palette = useMemo(() => buildLeafPalette(seed), [seed]);
+
+  /** manchas de pigmento: quebram a lisura do gradiente sem virar textura */
+  const blotches = useMemo(() => {
+    const random = createLeafRandom(seed ^ 0x9e3779b9);
+    return Array.from({ length: 14 }, () => ({
+      cx: 300 + random() * 1080,
+      cy: 190 + random() * 320,
+      rx: 26 + random() * 74,
+      ry: 14 + random() * 34,
+      rotate: -28 + random() * 56,
+      opacity: 0.05 + random() * 0.09,
+    }));
+  }, [seed]);
 
   return (
     <svg
-      viewBox={`0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}`}
+      viewBox={`0 0 ${LEAF_VIEW_WIDTH} ${LEAF_VIEW_HEIGHT}`}
       className={className}
       aria-hidden
       focusable="false"
     >
       <defs>
-        <linearGradient id={`${id}-blade`} x1="0" y1="0" x2="1" y2="0.75">
-          <stop offset="0" stopColor="#6E4E29" />
-          <stop offset="0.28" stopColor="#9A7038" />
-          <stop offset="0.62" stopColor="#C0954E" />
-          <stop offset="0.88" stopColor="#D8B978" />
-          <stop offset="1" stopColor="#E7D6A2" />
+        <linearGradient id={`${id}-blade`} x1="217" y1="120" x2="1505" y2="586" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor={palette.deep} />
+          <stop offset="0.18" stopColor={palette.mid} />
+          <stop offset="0.38" stopColor={palette.light} />
+          <stop offset="0.56" stopColor={palette.base} />
+          <stop offset="0.77" stopColor={palette.light} />
+          <stop offset="1" stopColor={palette.deep} />
         </linearGradient>
 
-        <radialGradient id={`${id}-sheen`} cx="0.34" cy="0.3" r="0.7">
-          <stop offset="0" stopColor="#FFF3D2" stopOpacity="0.55" />
-          <stop offset="0.55" stopColor="#FFF3D2" stopOpacity="0.12" />
-          <stop offset="1" stopColor="#FFF3D2" stopOpacity="0" />
+        {/* luz atravessando a lamina, deslocada do centro geometrico */}
+        <radialGradient
+          id={`${id}-inner`}
+          cx="0"
+          cy="0"
+          r="1"
+          gradientUnits="userSpaceOnUse"
+          gradientTransform="translate(705 334) rotate(7.8) scale(512 248)"
+        >
+          <stop offset="0" stopColor={palette.glow} stopOpacity="0.85" />
+          <stop offset="0.42" stopColor={palette.glow} stopOpacity="0.34" />
+          <stop offset="1" stopColor={palette.deep} stopOpacity="0" />
         </radialGradient>
 
-        {/* area do texto: levemente mais escura, para o contraste com a lamina */}
-        <radialGradient id={`${id}-ink`} cx="0.5" cy="0.5" r="0.5">
-          <stop offset="0" stopColor="#1A1409" stopOpacity="0.82" />
-          <stop offset="0.62" stopColor="#1A1409" stopOpacity="0.66" />
-          <stop offset="1" stopColor="#1A1409" stopOpacity="0" />
+        <linearGradient id={`${id}-edge`} x1="222" y1="147" x2="1477" y2="542" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor={palette.edge} />
+          <stop offset="0.48" stopColor={palette.veinSoft} />
+          <stop offset="1" stopColor={palette.edge} />
+        </linearGradient>
+
+        <linearGradient id={`${id}-midrib`} x1="217" y1="361" x2="1529" y2="394" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor={palette.stem} />
+          <stop offset="0.25" stopColor={palette.veinSoft} />
+          <stop offset="0.5" stopColor={palette.vein} />
+          <stop offset="0.74" stopColor={palette.veinSoft} />
+          <stop offset="1" stopColor={palette.stem} />
+        </linearGradient>
+
+        <linearGradient id={`${id}-vein`} x1="430" y1="160" x2="1455" y2="538" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor={palette.vein} stopOpacity="0.72" />
+          <stop offset="0.55" stopColor={palette.veinSoft} stopOpacity="0.56" />
+          <stop offset="1" stopColor={palette.vein} stopOpacity="0.32" />
+        </linearGradient>
+
+        <linearGradient id={`${id}-veinlet`} x1="500" y1="190" x2="1380" y2="520" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor={palette.vein} stopOpacity="0.3" />
+          <stop offset="1" stopColor={palette.veinSoft} stopOpacity="0.2" />
+        </linearGradient>
+
+        <linearGradient id={`${id}-stem`} x1="80" y1="382" x2="236" y2="363" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor={palette.stem} />
+          <stop offset="0.52" stopColor={palette.veinSoft} />
+          <stop offset="1" stopColor={palette.stem} />
+        </linearGradient>
+
+        {/* clareamento sob o texto: a mensagem e escura, a lamina abre caminho */}
+        <radialGradient id={`${id}-page`} cx="0.5" cy="0.5" r="0.5">
+          <stop offset="0" stopColor={palette.glow} stopOpacity="0.9" />
+          <stop offset="0.6" stopColor={palette.glow} stopOpacity="0.55" />
+          <stop offset="1" stopColor={palette.glow} stopOpacity="0" />
         </radialGradient>
+
+        <filter id={`${id}-shadow`} x="-8%" y="-24%" width="118%" height="156%">
+          <feDropShadow dx="0" dy="18" stdDeviation="20" floodColor="#0A1207" floodOpacity="0.42" />
+        </filter>
+
+        {/* grao: fractalNoise em soft-light da a lamina a aspereza do papel */}
+        <filter id={`${id}-grain`} x="166" y="79" width="1398" height="588" filterUnits="userSpaceOnUse">
+          <feTurbulence type="fractalNoise" baseFrequency="0.75" numOctaves="2" seed={seed % 100} result="noise" />
+          <feColorMatrix in="noise" type="saturate" values="0" result="mono" />
+          <feComponentTransfer in="mono" result="softNoise">
+            <feFuncA type="table" tableValues="0 0.07" />
+          </feComponentTransfer>
+          <feBlend in="SourceGraphic" in2="softNoise" mode="soft-light" />
+        </filter>
 
         <clipPath id={`${id}-clip`}>
-          <path d={outline} />
+          <path d={LEAF_OUTLINE} />
         </clipPath>
-
-        <filter id={`${id}-shadow`} x="-12%" y="-30%" width="124%" height="170%">
-          <feDropShadow dx="0" dy="16" stdDeviation="22" floodColor="#06100A" floodOpacity="0.55" />
-        </filter>
-
-        <filter id={`${id}-grain`} x="0%" y="0%" width="100%" height="100%">
-          <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" seed="7" result="noise" />
-          <feColorMatrix in="noise" type="saturate" values="0" result="mono" />
-          <feComponentTransfer in="mono" result="soft">
-            <feFuncA type="linear" slope="0.14" intercept="0" />
-          </feComponentTransfer>
-          <feComposite in="soft" in2="SourceGraphic" operator="in" />
-        </filter>
       </defs>
 
+      {/* peciolo */}
+      <path
+        d="M80 388C122 377 171 367 232 362"
+        stroke={`url(#${id}-stem)`}
+        strokeWidth="18"
+        strokeLinecap="round"
+        fill="none"
+      />
+
       <g filter={`url(#${id}-shadow)`}>
-        {/* peciolo */}
-        <path
-          d={`M 0 ${CENTER_Y + 8} C 14 ${CENTER_Y + 5} 30 ${CENTER_Y + 2} ${BASE_X + 6} ${CENTER_Y}`}
-          fill="none"
-          stroke="#6A4B27"
-          strokeWidth="11"
-          strokeLinecap="round"
-        />
+        <path d={LEAF_OUTLINE} fill={`url(#${id}-blade)`} stroke={`url(#${id}-edge)`} strokeWidth="4.5" />
 
-        <path d={outline} fill={`url(#${id}-blade)`} />
+        <g clipPath={`url(#${id}-clip)`} filter={`url(#${id}-grain)`}>
+          <rect x="166" y="79" width="1398" height="588" fill={`url(#${id}-inner)`} />
 
-        <g clipPath={`url(#${id}-clip)`}>
-          <rect x="0" y="0" width={VIEW_WIDTH} height={VIEW_HEIGHT} fill={`url(#${id}-sheen)`} />
-          <rect
-            x="0"
-            y="0"
-            width={VIEW_WIDTH}
-            height={VIEW_HEIGHT}
-            fill="#F6E6BE"
-            filter={`url(#${id}-grain)`}
-            opacity="0.55"
+          {/* volume: a metade superior pega luz, a inferior recolhe */}
+          <path
+            d="M275 273C479 170 759 162 1055 218C886 208 675 235 474 327C404 360 315 346 275 273Z"
+            fill={palette.glow}
+            opacity="0.34"
+          />
+          <path
+            d="M278 470C548 564 889 572 1218 489C1070 524 897 545 716 543C545 541 397 514 278 470Z"
+            fill={palette.edge}
+            opacity="0.12"
           />
 
-          {/* nervuras secundarias */}
-          <g stroke="#4E3418" strokeOpacity="0.34" strokeWidth="2.6" fill="none" strokeLinecap="round">
-            {veins.map((vein, index) => (
-              <path key={index} d={vein} />
+          {/* pigmentacao irregular */}
+          <g>
+            {blotches.map((blotch, index) => (
+              <ellipse
+                key={`blotch-${index}`}
+                cx={blotch.cx}
+                cy={blotch.cy}
+                rx={blotch.rx}
+                ry={blotch.ry}
+                fill={palette.blotch}
+                opacity={blotch.opacity}
+                transform={`rotate(${blotch.rotate.toFixed(1)} ${blotch.cx.toFixed(1)} ${blotch.cy.toFixed(1)})`}
+              />
             ))}
           </g>
 
-          {/* nervura central */}
-          <path d={midrib} stroke="#4A3116" strokeOpacity="0.55" strokeWidth="7" fill="none" strokeLinecap="round" />
+          {/* sombra e realce difusos ao longo da nervura central */}
           <path
-            d={midrib}
-            stroke="#F4E3B6"
-            strokeOpacity="0.3"
-            strokeWidth="2.4"
-            fill="none"
+            d="M222 348C651 316 1114 328 1526 393"
+            stroke={palette.edge}
+            strokeOpacity="0.12"
+            strokeWidth="42"
             strokeLinecap="round"
-            transform="translate(0,-3)"
+            fill="none"
+          />
+          <path
+            d="M220 357C645 370 1114 386 1526 398"
+            stroke={palette.glow}
+            strokeOpacity="0.5"
+            strokeWidth="20"
+            strokeLinecap="round"
+            fill="none"
           />
 
-          {/* fundo da mensagem */}
-          <ellipse cx={VIEW_WIDTH * 0.5} cy={CENTER_Y} rx="330" ry="130" fill={`url(#${id}-ink)`} />
-        </g>
+          <g stroke={`url(#${id}-vein)`} strokeLinecap="round" fill="none">
+            {LEAF_VEINS_UPPER.map(([path, width], index) => (
+              <path key={`vu-${index}`} d={path} strokeWidth={width} />
+            ))}
+            {LEAF_VEINS_LOWER.map(([path, width], index) => (
+              <path key={`vl-${index}`} d={path} strokeWidth={width} />
+            ))}
+          </g>
 
-        <path d={outline} fill="none" stroke="#4A3116" strokeOpacity="0.4" strokeWidth="2.5" />
+          <g stroke={`url(#${id}-veinlet)`} strokeLinecap="round" fill="none" strokeWidth="1.7">
+            {LEAF_VEINLETS_UPPER.map((path, index) => (
+              <path key={`nu-${index}`} d={path} />
+            ))}
+            {LEAF_VEINLETS_LOWER.map((path, index) => (
+              <path key={`nl-${index}`} d={path} />
+            ))}
+          </g>
+
+          <g stroke={palette.vein} strokeOpacity="0.2" strokeLinecap="round" fill="none" strokeWidth="1.1">
+            {LEAF_VEIN_MESH.map((path, index) => (
+              <path key={`mesh-${index}`} d={path} />
+            ))}
+          </g>
+
+          {/*
+            A nervura central entra ANTES da pagina da mensagem: a lamina
+            clareia por cima dela no miolo, entao o traco atravessa a folha
+            inteira mas nao corta as linhas do texto ao meio.
+          */}
+          <path d={LEAF_MIDRIB} stroke={`url(#${id}-midrib)`} strokeWidth="12" strokeLinecap="round" fill="none" />
+          <path
+            d={LEAF_MIDRIB_HIGHLIGHT}
+            stroke={palette.glow}
+            strokeOpacity="0.55"
+            strokeWidth="2.3"
+            strokeLinecap="round"
+            fill="none"
+          />
+
+          {/* pagina da mensagem: clareia o centro sem apagar as nervuras */}
+          <ellipse cx="860" cy="368" rx="470" ry="185" fill={`url(#${id}-page)`} />
+          <ellipse cx="860" cy="368" rx="360" ry="120" fill={`url(#${id}-page)`} opacity="0.75" />
+        </g>
       </g>
     </svg>
   );

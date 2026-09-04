@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 
 import type { LeafNode } from "@/lib/tree/generateTree";
+import { createLeafDetailTexture, messageLeafTone } from "@/lib/tree/leafArtwork";
 import { createHeroLeafGeometry } from "@/lib/tree/leafGeometry";
 import { createLeafMaterial, updateSunDirection, type LeafMaterialResult } from "@/lib/tree/leafMaterial";
 import { SUN_POSITION } from "@/lib/theme/scene-tokens";
@@ -13,6 +14,8 @@ export type FlyingLeafPhase = "idle" | "flying" | "held" | "returning";
 
 type FlyingLeafProps = {
   leaf: LeafNode | null;
+  /** indice da folha-mensagem: define o tom terroso que ela carrega do galho */
+  leafIndex: number | null;
   /** deslocamento do grupo da arvore, para converter a folha para o mundo */
   treeOffset: THREE.Vector3;
   phase: FlyingLeafPhase;
@@ -31,8 +34,19 @@ const FLIGHT_DURATION = 2.05;
 const FLIGHT_DURATION_MOBILE = 1.65;
 const FLIGHT_DURATION_REDUCED = 0.45;
 const RETURN_DURATION = 0.38;
-/** tempo em que a folha 3D se dissolve para o cartao SVG assumir */
-const HANDOFF_DURATION = 0.55;
+
+/**
+ * Ponto do voo em que o cartao SVG entra em cena.
+ *
+ * A folha 3D e uma malha de poucos poligonos: ampliada ate a tela inteira ela
+ * vira uma mancha lisa, e o cartao vetorial aparecendo depois lia como uma
+ * SEGUNDA folha. A troca acontece aqui, ainda em movimento e antes de a malha
+ * dominar o quadro — o cartao cresce a partir deste tamanho e o olho enxerga
+ * um salto so.
+ */
+const HANDOFF_AT = 0.66;
+/** fracao do voo gasta dissolvendo a malha depois do handoff */
+const HANDOFF_FADE = 0.26;
 
 function easeInOutCubic(t: number) {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -58,6 +72,7 @@ function easeOutBack(t: number) {
  */
 export function FlyingLeaf({
   leaf,
+  leafIndex,
   treeOffset,
   phase,
   reduceMotion,
@@ -78,24 +93,36 @@ export function FlyingLeaf({
    * Geometria e material em refs: os uniforms sao escritos todo frame e valores
    * memoizados sao tratados como imutaveis pelo React Compiler.
    */
-  const [assets] = useState<{ geometry: THREE.BufferGeometry; material: LeafMaterialResult }>(() => {
+  const [assets] = useState<{
+    geometry: THREE.BufferGeometry;
+    material: LeafMaterialResult;
+    texture: THREE.CanvasTexture | null;
+  }>(() => {
     const material = createLeafMaterial({
-      color: "#B9D07C",
-      subsurfaceColor: "#F2E9A6",
+      color: "#C8AE7A",
+      subsurfaceColor: "#F6EAB6",
       subsurfaceIntensity: 1.4,
       roughness: 0.5,
       vertexColors: true,
       windStrength: 0.012,
       cacheKey: "leaf-hero-v2",
-      emissive: "#2C3A12",
-      emissiveIntensity: 0.6,
+      emissive: "#2A2110",
+      emissiveIntensity: 0.45,
     });
 
     material.material.transparent = true;
     material.uniforms.uLeafLength.value = HERO_LEAF_LENGTH;
     material.uniforms.uWindSpeed.value = 0.75;
 
-    return { geometry: createHeroLeafGeometry(), material };
+    // mesmas nervuras do cartao vetorial: a folha nao pode trocar de desenho
+    // no meio do salto
+    const texture = createLeafDetailTexture(512);
+    if (texture) {
+      material.material.map = texture;
+      material.material.needsUpdate = true;
+    }
+
+    return { geometry: createHeroLeafGeometry(), material, texture };
   });
 
   const geometry = assets.geometry;
@@ -105,6 +132,7 @@ export function FlyingLeaf({
     return () => {
       assets.geometry.dispose();
       assets.material.material.dispose();
+      assets.texture?.dispose();
     };
   }, [assets]);
 
@@ -136,6 +164,14 @@ export function FlyingLeaf({
       spin: (leaf.phase % 1) * 2 - 1,
     };
   }, [leaf, treeOffset]);
+
+  useEffect(() => {
+    if (leafIndex === null) {
+      return;
+    }
+
+    assets.material.material.color.copy(messageLeafTone(leafIndex));
+  }, [assets, leafIndex]);
 
   useEffect(() => {
     if (phase === "flying") {
@@ -191,7 +227,9 @@ export function FlyingLeaf({
 
     // no desktop a folha pousa deitada; no retrato ela pousa em pe, igual ao
     // cartao SVG que assume logo em seguida
-    const targetSpan = isMobile ? visibleHeight * 0.9 : visibleWidth * 0.76;
+    // o alvo e o tamanho que o CARTAO tera: a malha nunca chega la, ela se
+    // dissolve no caminho (ver HANDOFF_AT)
+    const targetSpan = isMobile ? visibleHeight * 0.9 : visibleWidth * 0.78;
     const targetScale = targetSpan / HERO_LEAF_LENGTH;
 
     scratch.endPosition
@@ -214,11 +252,9 @@ export function FlyingLeaf({
           ? FLIGHT_DURATION_MOBILE
           : FLIGHT_DURATION;
 
-      if (phase === "flying") {
-        progressRef.current = Math.min(1, progressRef.current + delta / duration);
-      } else {
-        progressRef.current = 1;
-      }
+      // o voo continua depois do handoff: "held" chega antes de a curva
+      // terminar, e cortar o movimento ali daria um solavanco
+      progressRef.current = Math.min(1, progressRef.current + delta / duration);
 
       const t = progressRef.current;
 
@@ -276,18 +312,15 @@ export function FlyingLeaf({
       const scale = THREE.MathUtils.lerp(origin.scale, targetScale, THREE.MathUtils.clamp(scaleT, 0, 1.06));
       mesh.scale.setScalar(scale);
 
-      // ao pousar, a folha 3D se dissolve e o cartao SVG (alta resolucao)
-      // assume o lugar dela — o texto precisa de nitidez que a malha nao da
-      if (phase === "held") {
-        handoffRef.current = Math.min(1, handoffRef.current + delta / HANDOFF_DURATION);
-      }
+      // a malha se dissolve enquanto o cartao vetorial cresce no lugar dela
+      handoffRef.current = THREE.MathUtils.clamp((t - HANDOFF_AT) / HANDOFF_FADE, 0, 1);
 
       const fadeIn = THREE.MathUtils.clamp(t * 6, 0, 1);
       const fadeOut = 1 - easeOutCubic(handoffRef.current);
       leafMaterial.material.opacity = fadeIn * fadeOut;
       mesh.visible = leafMaterial.material.opacity > 0.01;
 
-      if (phase === "flying" && t >= 1 && !arrivedRef.current) {
+      if (t >= HANDOFF_AT && !arrivedRef.current) {
         arrivedRef.current = true;
         onArrive();
       }

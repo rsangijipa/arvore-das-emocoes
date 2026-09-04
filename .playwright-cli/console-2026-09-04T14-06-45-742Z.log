@@ -1,0 +1,24 @@
+[    4108ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_f3530cac._.js:2297
+[    4274ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_f3530cac._.js:2297
+[    4794ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_f3530cac._.js:2297
+[    5467ms] [LOG] [Fast Refresh] done in 773ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_f3530cac._.js:2297
+[    5639ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_f3530cac._.js:2297
+[    7499ms] [INFO] [folhas] vertexColors=%s | atributo color=%s | instanceColor=%s true true 0.09012613445520401,0.2596434950828552,0.040452320128679276 @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_f3530cac._.js:2297
+[    7500ms] [INFO] [arvore] semente 107577033 | 855 galhos | 2300 folhas | 10 folhas-mensagem | altura 7.13 | copa 4.82 @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_f3530cac._.js:2297
+[    8768ms] [LOG] [Fast Refresh] done in 3229ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_f3530cac._.js:2297
+[   33857ms] [ERROR] WebSocket connection to 'ws://127.0.0.1:3000/_next/webpack-hmr?id=NMnHALh2KYdcZZqd23JcD' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_client_17643121._.js:10878
+[   36458ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_f3530cac._.js:2297
+[   37281ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_f3530cac._.js:2297
+[   37301ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_f3530cac._.js:2297
+[   37421ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_f3530cac._.js:2297
+[   37682ms] [LOG] [Fast Refresh] done in 371ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_f3530cac._.js:2297
+[   38593ms] [INFO] [folhas] vertexColors=%s | atributo color=%s | instanceColor=%s true true 0.20658321678638458,0.4633713960647583,0.07545381039381027 @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_f3530cac._.js:2297
+[   38593ms] [INFO] [arvore] semente 1461632896 | 859 galhos | 2300 folhas | 10 folhas-mensagem | altura 7.24 | copa 5.47 @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_f3530cac._.js:2297
+[   41630ms] [WARNING] The resource http://127.0.0.1:3000/_next/static/media/01e4147cff8141ee-s.p.7787e134.woff2 was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ http://127.0.0.1:3000/:0
+[   41630ms] [WARNING] The resource http://127.0.0.1:3000/_next/static/media/a85fe84266768609-s.p.e658778d.woff2 was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ http://127.0.0.1:3000/:0
+[   41630ms] [WARNING] The resource http://127.0.0.1:3000/_next/static/media/fba5a26ea33df6a3-s.p.1bbdebe6.woff2 was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ http://127.0.0.1:3000/:0
+[   41630ms] [WARNING] The resource http://127.0.0.1:3000/_next/static/media/2a65768255d6b625-s.p.d19752fb.woff2 was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ http://127.0.0.1:3000/:0
+[   63036ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_f3530cac._.js:2297
+[   63105ms] [LOG] [Fast Refresh] done in 174ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_f3530cac._.js:2297
+[   81025ms] [INFO] [folhas] vertexColors=%s | atributo color=%s | instanceColor=%s true true 0.10503938049077988,0.29859933257102966,0.04426373168826103 @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_f3530cac._.js:2297
+[   81025ms] [INFO] [arvore] semente 1461632896 | 804 galhos | 1450 folhas | 10 folhas-mensagem | altura 7.77 | copa 4.16 @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_f3530cac._.js:2297

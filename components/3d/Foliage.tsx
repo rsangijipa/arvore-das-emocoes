@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 
 import type { LeafNode } from "@/lib/tree/generateTree";
+import { createLeafDetailTexture, messageLeafTone } from "@/lib/tree/leafArtwork";
 import { createLeafVariants } from "@/lib/tree/leafGeometry";
 import { createLeafMaterial, updateSunDirection } from "@/lib/tree/leafMaterial";
 import { SUN_POSITION } from "@/lib/theme/scene-tokens";
@@ -35,22 +36,14 @@ const COMMON_TONES = [
   new THREE.Color("#A6CE68"),
 ];
 
-/** folhas com mensagem: tons terrosos, para se destacarem do verde da copa */
-const MESSAGE_TONES = [
-  new THREE.Color("#A9683A"),
-  new THREE.Color("#C08A4A"),
-  new THREE.Color("#8E5730"),
-  new THREE.Color("#D2A35F"),
-  new THREE.Color("#B57C3F"),
-  new THREE.Color("#9C6234"),
-  new THREE.Color("#C99356"),
-  new THREE.Color("#A87244"),
-  new THREE.Color("#D9B278"),
-  new THREE.Color("#8A4F2C"),
-];
+/**
+ * Folhas com mensagem: tons terrosos claros sorteados pela MESMA formula que
+ * pinta o cartao SVG. A folha que brilha na copa e a folha que abre na tela —
+ * so muda a resolucao.
+ */
 
-const MESSAGE_HOVER = new THREE.Color("#F6D9A0");
-const MESSAGE_READ = new THREE.Color("#6E5A46");
+const MESSAGE_HOVER = new THREE.Color("#FBEAC0");
+const MESSAGE_READ = new THREE.Color("#7A6A57");
 const AUTUMN_TONE = new THREE.Color("#C9A65A");
 
 /**
@@ -202,6 +195,29 @@ export function Foliage({
   const commonMaterial = materials.common;
   const messageMaterial = materials.message;
 
+  /**
+   * Nervuras da folha-mensagem vindas do desenho vetorial.
+   *
+   * Uma textura so, em tons de cinza, multiplicada pela cor de cada instancia:
+   * as dez folhas compartilham o desenho e mantem tons terrosos diferentes,
+   * sem custar dez materiais nem quebrar o instanciamento.
+   */
+  const [detailTexture] = useState(() => createLeafDetailTexture(512));
+
+  useEffect(() => {
+    if (!detailTexture) {
+      return;
+    }
+
+    messageMaterial.material.map = detailTexture;
+    messageMaterial.material.needsUpdate = true;
+
+    return () => {
+      messageMaterial.material.map = null;
+      detailTexture.dispose();
+    };
+  }, [detailTexture, messageMaterial]);
+
   const [haloTexture] = useState<THREE.CanvasTexture | null>(() => {
     if (typeof document === "undefined") {
       return null;
@@ -309,7 +325,7 @@ export function Foliage({
       } else if (readSet.has(index)) {
         color.copy(MESSAGE_READ);
       } else {
-        color.copy(MESSAGE_TONES[index % MESSAGE_TONES.length]);
+        color.copy(messageLeafTone(index));
       }
 
       mesh.setColorAt(index, color);

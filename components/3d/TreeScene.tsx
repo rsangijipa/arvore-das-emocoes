@@ -10,6 +10,7 @@ import { FlyingLeaf, type FlyingLeafPhase } from "@/components/3d/FlyingLeaf";
 import { Foliage } from "@/components/3d/Foliage";
 import { Panorama } from "@/components/3d/Panorama";
 import { TreeBark } from "@/components/3d/TreeBark";
+import { WindParticles } from "@/components/3d/WindParticles";
 import { GRASS_FAR_COLOR, GRASS_NEAR_COLOR, HORIZON_COLOR } from "@/lib/theme/panorama";
 import {
   MESSAGE_LEAF_COUNT,
@@ -228,7 +229,9 @@ function SceneContent({
   const framing = useMemo(() => {
     const height = Math.max(2.5, tree.height);
     const radius = Math.max(1.4, tree.crownRadius);
-    const distance = Math.max(height * 1.35, radius * 2.5) * (isMobile ? 1.32 : 1.05);
+    // a arvore inteira precisa caber no quadro: com o fator antigo a copa
+    // saia pelo topo assim que a semente gerava uma arvore alta
+    const distance = Math.max(height * 1.5, radius * 2.7) * (isMobile ? 1.34 : 1.12);
 
     return {
       height,
@@ -492,12 +495,21 @@ function SceneContent({
 
       <FlyingLeaf
         leaf={activeMessage === null ? null : (tree.messageLeaves[activeMessage] ?? null)}
+        leafIndex={activeMessage}
         treeOffset={TREE_OFFSET}
         phase={flightPhase}
         reduceMotion={reduceMotion}
         isMobile={isMobile}
         onArrive={handleArrive}
         onReturned={handleReturned}
+      />
+
+      {/* poeira levada pelo vento: mesma direcao do balanco da copa */}
+      <WindParticles
+        count={quality.windParticles}
+        seed={seed}
+        reduceMotion={reduceMotion}
+        dimmed={messageOpen || introActive}
       />
 
       <Ground receiveShadow={quality.shadows} />
@@ -512,10 +524,10 @@ function SceneContent({
         dampingFactor={0.06}
         rotateSpeed={isMobile ? 0.55 : 0.75}
         zoomSpeed={0.7}
-        minDistance={framing.distance * 0.45}
+        minDistance={framing.distance * 0.62}
         maxDistance={framing.distance * 2.1}
         minPolarAngle={0.25}
-        maxPolarAngle={Math.PI * 0.495}
+        maxPolarAngle={Math.PI * 0.46}
         target={[0, framing.targetY, 0]}
       />
 

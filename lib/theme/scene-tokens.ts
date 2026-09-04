@@ -32,6 +32,7 @@ export const SCENE_QUALITY_CONFIGS: Record<QualityProfile, QualityConfig> = {
     shadows: true,
     shadowMapSize: 2048,
     windStrength: 0.021,
+    windParticles: 320,
   },
   medium: {
     profile: "medium",
@@ -43,6 +44,7 @@ export const SCENE_QUALITY_CONFIGS: Record<QualityProfile, QualityConfig> = {
     shadows: true,
     shadowMapSize: 1024,
     windStrength: 0.021,
+    windParticles: 190,
   },
   safe: {
     profile: "safe",
@@ -54,6 +56,7 @@ export const SCENE_QUALITY_CONFIGS: Record<QualityProfile, QualityConfig> = {
     shadows: false,
     shadowMapSize: 1024,
     windStrength: 0.016,
+    windParticles: 90,
   },
 };
 

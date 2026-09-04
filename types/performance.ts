@@ -14,4 +14,6 @@ export type QualityConfig = {
   shadows: boolean;
   shadowMapSize: 1024 | 2048;
   windStrength: number;
+  /** poeira de vento suspensa no ar (0 desliga) */
+  windParticles: number;
 };

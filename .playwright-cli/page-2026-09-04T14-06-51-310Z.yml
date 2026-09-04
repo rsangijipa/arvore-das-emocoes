@@ -1,0 +1,33 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - heading "Árvore das Emoções" [level=1] [ref=e3]
+    - paragraph [ref=e4]: "Cada árvore é gerada do zero ao abrir a página. As folhas maiores e luminosas guardam mensagens: toque uma delas, ou use o botão de receber mensagem para abrir uma frase sem navegar na cena 3D. Escape fecha os painéis abertos."
+    - navigation "Folhas com mensagem" [ref=e5]:
+      - list [ref=e6]:
+        - listitem [ref=e7]:
+          - button "Colher a folha 1 de 10" [ref=e8] [cursor=pointer]
+        - listitem [ref=e9]:
+          - button "Colher a folha 2 de 10" [ref=e10] [cursor=pointer]
+        - listitem [ref=e11]:
+          - button "Colher a folha 3 de 10" [ref=e12] [cursor=pointer]
+        - listitem [ref=e13]:
+          - button "Colher a folha 4 de 10" [ref=e14] [cursor=pointer]
+        - listitem [ref=e15]:
+          - button "Colher a folha 5 de 10" [ref=e16] [cursor=pointer]
+        - listitem [ref=e17]:
+          - button "Colher a folha 6 de 10" [ref=e18] [cursor=pointer]
+        - listitem [ref=e19]:
+          - button "Colher a folha 7 de 10" [ref=e20] [cursor=pointer]
+        - listitem [ref=e21]:
+          - button "Colher a folha 8 de 10" [ref=e22] [cursor=pointer]
+        - listitem [ref=e23]:
+          - button "Colher a folha 9 de 10" [ref=e24] [cursor=pointer]
+        - listitem [ref=e25]:
+          - button "Colher a folha 10 de 10" [ref=e26] [cursor=pointer]
+    - generic [ref=e27]: Carregando atmosfera...
+    - button "Expandir painel" [ref=e29] [cursor=pointer]
+    - generic:
+      - paragraph: Carregando mensagens...
+    - button "Nova árvore" [ref=e31] [cursor=pointer]
+  - button "Open Next.js Dev Tools" [ref=e42] [cursor=pointer]
+  - alert [ref=e46]

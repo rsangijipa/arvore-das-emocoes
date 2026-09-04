@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "motion/react";
-import { ChevronLeft, ChevronRight, Heart, RefreshCw, SlidersHorizontal } from "lucide-react";
+import { ChevronRight, Heart, RefreshCw, SlidersHorizontal, Sparkles } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { FavoritesDrawer } from "@/components/ui/FavoritesDrawer";
@@ -500,7 +500,15 @@ export function ExperienceRoot() {
         </AnimatePresence>
       </div>
 
-      <div className={`pointer-events-none absolute inset-0 z-20 ${introLocked ? "opacity-0" : "opacity-100"}`}>
+      {/*
+        Com a mensagem aberta o HUD sai de cena: a folha ocupa a tela inteira e
+        o painel do canto ficava por cima da lamina, competindo com o texto.
+      */}
+      <div
+        className={`pointer-events-none absolute inset-0 z-20 transition-opacity duration-300 ${
+          introLocked || panelOpen ? "opacity-0" : "opacity-100"
+        } ${panelOpen ? "invisible" : "visible"}`}
+      >
         <div className="relative mx-auto h-full w-full max-w-[1240px] px-4 sm:px-6 lg:px-8">
           <motion.div
             initial={{ opacity: 0, x: -14, y: -8 }}
@@ -508,16 +516,32 @@ export function ExperienceRoot() {
             transition={{ duration: 0.45, ease: "easeOut" }}
             className="pointer-events-none absolute top-4 left-4 sm:top-6 sm:left-6 lg:top-8 lg:left-8"
           >
+            {/*
+              Recolhido, o painel vira uma pilula com o tema ativo — o estado
+              continua legivel sem ocupar um terco da cena. Expandido, o botao
+              de fechar mora dentro do proprio painel: dois controles de
+              colapso lado a lado so confundem.
+            */}
             <div className="flex items-start gap-2">
-              <button
-                type="button"
-                onClick={() => setHudExpanded((current) => !current)}
-                aria-label={hudExpanded ? "Recolher painel" : "Expandir painel"}
-                aria-expanded={hudExpanded}
-                className="hud-pill pointer-events-auto inline-flex h-10 w-10 items-center justify-center text-[#D6E2F0] transition hover:text-white"
-              >
-                {hudExpanded ? <ChevronLeft className="h-4 w-4" /> : <SlidersHorizontal className="h-4 w-4" />}
-              </button>
+              <AnimatePresence initial={false}>
+                {hudExpanded ? null : (
+                  <motion.button
+                    key="hud-collapsed"
+                    initial={{ opacity: 0, scale: 0.96 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.96 }}
+                    transition={{ duration: 0.2 }}
+                    type="button"
+                    onClick={() => setHudExpanded(true)}
+                    aria-label="Abrir controles"
+                    aria-expanded={false}
+                    className="hud-pill pointer-events-auto inline-flex h-10 items-center gap-2 px-3 text-[11px] font-semibold text-[#D6E2F0] backdrop-blur-md transition hover:text-white"
+                  >
+                    <SlidersHorizontal className="h-4 w-4" aria-hidden />
+                    <span className="max-w-[16ch] truncate">{themeContextLabel}</span>
+                  </motion.button>
+                )}
+              </AnimatePresence>
 
               <AnimatePresence initial={false}>
                 {hudExpanded ? (
@@ -527,14 +551,14 @@ export function ExperienceRoot() {
                     animate={{ opacity: 1, x: 0, scale: 1 }}
                     exit={{ opacity: 0, x: -10, scale: 0.98 }}
                     transition={{ duration: 0.24, ease: "easeOut" }}
-                    className="pointer-events-auto w-[min(90vw,430px)] rounded-2xl border border-white/15 bg-[rgba(13,20,34,0.88)] p-3.5 sm:p-4"
+                    className="hud-panel pointer-events-auto w-[min(88vw,400px)] overflow-hidden"
                   >
-                    <div className="flex items-start justify-between gap-2">
+                    <header className="flex items-start justify-between gap-3 px-4 pt-4">
                       <div>
-                        <p className="text-[10px] font-semibold tracking-[0.24em] uppercase text-[#A5BCD0]">
+                        <p className="text-[9px] font-semibold tracking-[0.26em] uppercase text-[#8FA6BD]">
                           Árvore das Emoções
                         </p>
-                        <p className="mt-1 max-w-[32ch] text-[13px] leading-snug text-[#EBF0F6] sm:text-sm">
+                        <p className="mt-1.5 max-w-[30ch] text-[13px] leading-snug text-[#E7EEF7]">
                           Uma árvore nova a cada visita. As folhas maiores guardam mensagens.
                         </p>
                       </div>
@@ -542,19 +566,22 @@ export function ExperienceRoot() {
                       <button
                         type="button"
                         onClick={() => setHudExpanded(false)}
-                        aria-label="Recolher"
-                        className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-white/5 text-[#D7E5F4] transition hover:bg-white/10 hover:text-white"
+                        aria-label="Recolher painel"
+                        className="-mr-1 inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[#93A8BE] transition hover:bg-white/10 hover:text-white"
                       >
                         <ChevronRight className="h-4 w-4" />
                       </button>
-                    </div>
+                    </header>
 
-                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {/* acao principal isolada: e a unica coisa que o visitante
+                        precisa fazer para receber uma mensagem */}
+                    <div className="flex flex-wrap items-center gap-2 px-4 pt-3.5">
                       <button
                         type="button"
                         onClick={requestRandomLeaf}
-                        className="h-8 rounded-full bg-[#F2EFE8] px-4 text-[11px] font-bold text-[#1C1A17] transition hover:bg-white"
+                        className="inline-flex h-9 items-center gap-2 rounded-full bg-[#F2EFE8] px-4 text-[11px] font-bold tracking-[0.04em] text-[#1C1A17] shadow-[0_4px_16px_rgba(0,0,0,0.3)] transition hover:bg-white"
                       >
+                        <Sparkles className="h-3.5 w-3.5" aria-hidden />
                         {primaryActionLabel}
                       </button>
 
@@ -562,38 +589,54 @@ export function ExperienceRoot() {
                         <button
                           type="button"
                           onClick={dismissIntro}
-                          className="h-8 rounded-full border border-white/20 bg-white/10 px-4 text-[11px] font-medium text-white transition hover:bg-white/20"
+                          className="h-9 rounded-full border border-white/15 px-3.5 text-[11px] font-medium text-white/75 transition hover:bg-white/10 hover:text-white"
                         >
-                          Explorar livremente
+                          Explorar
                         </button>
                       ) : null}
                     </div>
 
                     {showIntro ? (
-                      <div className="mt-3 space-y-1 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-3 text-[11px] text-[#DCE7F2]/80">
-                        <p>Procure as {MESSAGE_LEAF_COUNT} folhas maiores, com brilho dourado.</p>
-                        <p>Toque em uma delas: ela se solta e traz a mensagem até você.</p>
-                        <p>Guarde as frases que quiser revisitar depois.</p>
-                      </div>
+                      <ol className="mt-3.5 ml-4 space-y-1.5 px-4 text-[11px] leading-relaxed text-[#C7D6E6]/85">
+                        <li>Procure as {MESSAGE_LEAF_COUNT} folhas maiores, com brilho dourado.</li>
+                        <li>Toque em uma delas: ela se solta e traz a mensagem até você.</li>
+                        <li>Guarde as frases que quiser revisitar depois.</li>
+                      </ol>
                     ) : null}
 
-                    <div className="mt-3 space-y-2">
-                      <p className="text-[11px] text-white/70">{themeContextLabel}</p>
-                      <ThemeFilter themes={THEMES} value={themeFilter} onChange={handleThemeChange} />
-                    </div>
+                    <div className="hud-divider mx-4 mt-4" />
 
-                    <div className="mt-2.5 flex flex-wrap gap-1.5 sm:gap-2">
+                    <section className="px-4 pt-3">
+                      <div className="mb-2 flex items-baseline justify-between gap-2">
+                        <span className="text-[9px] font-semibold tracking-[0.22em] uppercase text-[#8FA6BD]">
+                          Tema
+                        </span>
+                        <span className="truncate text-[11px] text-white/55">{themeContextLabel}</span>
+                      </div>
+                      <ThemeFilter themes={THEMES} value={themeFilter} onChange={handleThemeChange} />
+                    </section>
+
+                    <div className="hud-divider mx-4 mt-3.5" />
+
+                    <footer className="flex items-center justify-between px-4 py-3">
                       <button
                         type="button"
                         onClick={() => setFavoritesOpen((current) => !current)}
-                        className="hud-pill h-7 px-2.5 text-[10px] transition"
+                        className="inline-flex h-8 items-center gap-2 rounded-full px-2.5 text-[11px] font-medium text-[#C7D6E6] transition hover:bg-white/10 hover:text-white"
                       >
-                        <span className="inline-flex items-center gap-1.5">
-                          <Heart className="h-3 w-3" />
-                          Favoritas{favorites.length > 0 ? ` (${favorites.length})` : ""}
-                        </span>
+                        <Heart className="h-3.5 w-3.5" aria-hidden />
+                        Favoritas
+                        {favorites.length > 0 ? (
+                          <span className="rounded-full bg-white/12 px-1.5 py-px text-[10px] font-bold tabular-nums">
+                            {favorites.length}
+                          </span>
+                        ) : null}
                       </button>
-                    </div>
+
+                      <span className="text-[10px] tracking-[0.12em] text-white/35">
+                        {MESSAGE_LEAF_COUNT} folhas com mensagem
+                      </span>
+                    </footer>
                   </motion.div>
                 ) : null}
               </AnimatePresence>
@@ -666,23 +709,35 @@ export function ExperienceRoot() {
         onSelect={handleSelectFavorite}
       />
 
-      <button
-        type="button"
-        onClick={regenerateTree}
-        className="hud-pill pointer-events-auto absolute top-4 right-4 z-30 flex h-10 items-center gap-2 px-3 text-[10px] font-semibold tracking-[0.1em] uppercase sm:top-6 sm:right-6"
-      >
-        <RefreshCw className="h-3.5 w-3.5" />
-        Nova árvore
-      </button>
-
-      {isMobile && !panelOpen ? (
+      {!panelOpen ? (
         <button
           type="button"
-          onClick={requestRandomLeaf}
-          className="hud-pill pointer-events-auto fixed right-4 bottom-5 z-30 h-11 px-4 text-[11px] font-semibold tracking-[0.1em] uppercase"
+          onClick={regenerateTree}
+          aria-label="Gerar uma nova árvore"
+          className="hud-pill pointer-events-auto absolute top-4 right-4 z-30 flex h-10 items-center gap-2 px-3 text-[11px] font-semibold text-[#D6E2F0] backdrop-blur-md transition hover:text-white sm:top-6 sm:right-6"
         >
-          {primaryActionLabel}
+          <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+          <span className="hidden sm:inline">Nova árvore</span>
         </button>
+      ) : null}
+
+      {/*
+        No celular a acao principal precisa estar ao alcance do polegar, nao
+        dentro de um painel no canto superior. Ela some quando a mensagem esta
+        aberta — la os controles da folha assumem.
+      */}
+      {isMobile && !panelOpen ? (
+        <motion.button
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          whileTap={{ scale: 0.97 }}
+          type="button"
+          onClick={requestRandomLeaf}
+          className="pointer-events-auto fixed bottom-[max(1.25rem,env(safe-area-inset-bottom))] left-1/2 z-30 flex h-12 -translate-x-1/2 items-center gap-2 rounded-full bg-[#F2EFE8] px-5 text-[12px] font-bold text-[#1C1A17] shadow-[0_10px_30px_rgba(0,0,0,0.45)]"
+        >
+          <Sparkles className="h-4 w-4" aria-hidden />
+          {primaryActionLabel}
+        </motion.button>
       ) : null}
     </main>
   );
