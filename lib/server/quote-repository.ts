@@ -14,18 +14,31 @@ import type {
 } from "@/types/quote";
 import { TONES } from "@/types/quote";
 
+/**
+ * Estado em memoria: fallback de MODO LOCAL, usado apenas quando o Firebase
+ * Admin nao esta configurado. Em runtime serverless cada instancia tem a sua
+ * copia e tudo se perde no cold start — por isso nao serve como armazenamento
+ * real, so mantem a aplicacao navegavel em desenvolvimento.
+ */
 const interactionLog = new Map<string, InteractionPayload[]>();
 const favoritesBySession = new Map<string, Set<string>>();
-const QUOTE_CACHE_TTL_MS = 60_000;
-const FAVORITES_CACHE_TTL_MS = 30_000;
 const MAX_IN_MEMORY_SESSIONS = 400;
+
+/**
+ * O catalogo de frases muda raramente e e igual para todo mundo, entao vale
+ * cachear por instancia. Favoritas NAO sao cacheadas: sao por usuario e mudam a
+ * cada clique, e um cache por instancia devolvia lista velha por ate 30s quando
+ * o POST caia em outra instancia.
+ */
+const QUOTE_CACHE_TTL_MS = 60_000;
+
+/** teto de operacoes por batch do Firestore */
+const FIRESTORE_BATCH_LIMIT = 500;
 
 let firestoreQuotesCache: {
   expiresAt: number;
   quotes: Quote[];
 } | null = null;
-
-const favoritesCache = new Map<string, { expiresAt: number; quoteIds: string[] }>();
 
 function trimSessionMap<T>(map: Map<string, T>, maxEntries: number) {
   while (map.size > maxEntries) {
@@ -35,20 +48,6 @@ function trimSessionMap<T>(map: Map<string, T>, maxEntries: number) {
     }
     map.delete(firstKey);
   }
-}
-
-function sweepExpiredFavoritesCache(now = Date.now()) {
-  if (favoritesCache.size < MAX_IN_MEMORY_SESSIONS) {
-    return;
-  }
-
-  for (const [sessionId, entry] of favoritesCache.entries()) {
-    if (entry.expiresAt <= now) {
-      favoritesCache.delete(sessionId);
-    }
-  }
-
-  trimSessionMap(favoritesCache, MAX_IN_MEMORY_SESSIONS);
 }
 
 function activeQuotes(): Quote[] {
@@ -169,18 +168,26 @@ export async function registerInteractions(payloads: InteractionPayload[]): Prom
 
   if (db) {
     try {
-      const batch = db.batch();
-      for (const payload of payloads) {
-        const ref = db.collection("user_interactions").doc();
-        batch.set(ref, {
-          sessionId: payload.sessionId,
-          actionType: payload.actionType,
-          quoteId: payload.quoteId ?? null,
-          theme: payload.theme ?? "all",
-          createdAt: new Date().toISOString(),
-        });
+      // O batch do Firestore rejeita mais de 500 operacoes: recortamos em
+      // blocos para que um lote grande nao derrube a rota inteira.
+      for (let start = 0; start < payloads.length; start += FIRESTORE_BATCH_LIMIT) {
+        const chunk = payloads.slice(start, start + FIRESTORE_BATCH_LIMIT);
+        const batch = db.batch();
+
+        for (const payload of chunk) {
+          const ref = db.collection("user_interactions").doc();
+          batch.set(ref, {
+            sessionId: payload.sessionId,
+            actionType: payload.actionType,
+            quoteId: payload.quoteId ?? null,
+            theme: payload.theme ?? "all",
+            createdAt: new Date().toISOString(),
+          });
+        }
+
+        await batch.commit();
       }
-      await batch.commit();
+
       return;
     } catch {
       // Fallback em memoria para manter a aplicacao funcional sem Firebase.
@@ -197,38 +204,26 @@ export async function registerInteractions(payloads: InteractionPayload[]): Prom
   trimSessionMap(interactionLog, MAX_IN_MEMORY_SESSIONS);
 }
 
+/**
+ * Sem cache de proposito: favoritas sao por usuario e mudam a cada clique. Um
+ * cache por instancia devolvia lista desatualizada por ate 30s sempre que o
+ * POST era atendido por outra instancia (salvar no celular, abrir no desktop).
+ */
 export async function listFavorites(sessionId: string): Promise<string[]> {
   const db = getFirebaseAdminDb();
-
-  const now = Date.now();
-  sweepExpiredFavoritesCache(now);
-  const cached = favoritesCache.get(sessionId);
-  if (cached && cached.expiresAt > now) {
-    return cached.quoteIds;
-  }
 
   if (db) {
     try {
       const snapshot = await db.collection("user_favorites").doc(sessionId).get();
       const quoteIds = snapshot.data()?.quoteIds;
-      const sanitized = Array.isArray(quoteIds) ? quoteIds.filter((id): id is string => typeof id === "string") : [];
-      favoritesCache.set(sessionId, {
-        expiresAt: now + FAVORITES_CACHE_TTL_MS,
-        quoteIds: sanitized,
-      });
-      return sanitized;
+      return Array.isArray(quoteIds) ? quoteIds.filter((id): id is string => typeof id === "string") : [];
     } catch {
       // Fallback local caso o Firestore nao esteja disponivel.
     }
   }
 
-  const local = [...(favoritesBySession.get(sessionId) ?? new Set<string>())];
-  favoritesCache.set(sessionId, {
-    expiresAt: now + FAVORITES_CACHE_TTL_MS,
-    quoteIds: local,
-  });
   trimSessionMap(favoritesBySession, MAX_IN_MEMORY_SESSIONS);
-  return local;
+  return [...(favoritesBySession.get(sessionId) ?? new Set<string>())];
 }
 
 export async function saveFavorite(payload: FavoritePayload): Promise<string[]> {
@@ -254,12 +249,6 @@ export async function saveFavorite(payload: FavoritePayload): Promise<string[]> 
         { merge: true },
       );
 
-      favoritesCache.set(payload.sessionId, {
-        expiresAt: Date.now() + FAVORITES_CACHE_TTL_MS,
-        quoteIds: next,
-      });
-      sweepExpiredFavoritesCache();
-
       return next;
     } catch {
       // Fallback local caso o Firestore nao esteja disponivel.
@@ -275,14 +264,8 @@ export async function saveFavorite(payload: FavoritePayload): Promise<string[]> 
   }
 
   favoritesBySession.set(payload.sessionId, sessionFavorites);
-  const local = [...sessionFavorites.values()];
-  favoritesCache.set(payload.sessionId, {
-    expiresAt: Date.now() + FAVORITES_CACHE_TTL_MS,
-    quoteIds: local,
-  });
   trimSessionMap(favoritesBySession, MAX_IN_MEMORY_SESSIONS);
-  sweepExpiredFavoritesCache();
-  return local;
+  return [...sessionFavorites.values()];
 }
 
 export async function hasTheme(theme: string): Promise<boolean> {

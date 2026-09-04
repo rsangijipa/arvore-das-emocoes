@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { Heart, X } from "lucide-react";
 
+import { themeLabel } from "@/data/labels";
 import type { Quote } from "@/types/quote";
 
 type FavoritesDrawerProps = {
@@ -31,7 +32,7 @@ export function FavoritesDrawer({ open, quotes, onClose, onSelect }: FavoritesDr
               <Heart className="h-4 w-4 text-[#F3D08A]" />
               <div>
                 <p className="text-[11px] tracking-[0.18em] uppercase text-[#D5E1EF]">Favoritas</p>
-                <p className="text-[11px] text-[#AFC3D9]">Salvas nesta sessao</p>
+                <p className="text-[11px] text-[#AFC3D9]">Salvas neste dispositivo</p>
               </div>
             </div>
 
@@ -48,7 +49,7 @@ export function FavoritesDrawer({ open, quotes, onClose, onSelect }: FavoritesDr
           <div className="max-h-[48vh] space-y-2 overflow-y-auto pr-1">
             {quotes.length === 0 ? (
               <p className="rounded-2xl border border-dashed border-white/12 bg-white/[0.04] px-4 py-5 text-sm text-[#C7D8EA]">
-                Suas frases salvas aparecerao aqui.
+                Suas frases guardadas aparecerão aqui.
               </p>
             ) : (
               quotes.map((quote) => (
@@ -58,7 +59,7 @@ export function FavoritesDrawer({ open, quotes, onClose, onSelect }: FavoritesDr
                   onClick={() => onSelect(quote)}
                   className="hud-list-item w-full px-4 py-3 text-left transition"
                 >
-                  <p className="text-[10px] tracking-[0.18em] uppercase text-[#AFC3D9]">{quote.theme}</p>
+                  <p className="text-[10px] tracking-[0.18em] uppercase text-[#AFC3D9]">{themeLabel(quote.theme)}</p>
                   <p className="mt-1 text-sm leading-relaxed text-[#F2F6FC]">{quote.text}</p>
                 </button>
               ))

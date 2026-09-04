@@ -1,417 +1,606 @@
 import * as THREE from "three";
 
-export type BranchCurve = {
+/**
+ * Gerador procedural da arvore.
+ *
+ * Modelo botanico:
+ * - Eixos recursivos com dominancia apical: cada ramo continua em si mesmo
+ *   (continuacao monopodial) e emite ramos laterais ao longo do comprimento,
+ *   em vez de explodir varios galhos do mesmo ponto (que gera o efeito "guarda-chuva").
+ * - Filotaxia em angulo aureo (137.5 graus) para distribuir laterais e folhas.
+ * - Regra dos tubos (da Vinci): o raio de um filho e sempre uma fracao do raio do
+ *   pai no ponto exato de insercao -> nenhum galho fica mais grosso que quem o sustenta.
+ * - Tropismos: fototropismo (subir), gravitropismo (pender nas pontas) e
+ *   crescimento radial para fora do tronco (busca de luz).
+ */
+
+export type BranchKind = "trunk" | "branch" | "root";
+
+export type BranchSegment = {
   curve: THREE.CatmullRomCurve3;
   radiusBottom: number;
   radiusTop: number;
   depth: number;
+  kind: BranchKind;
+  /** comprimento aproximado, usado para escolher a tesselacao */
+  length: number;
 };
 
-export type RootCurve = {
-  curve: THREE.CatmullRomCurve3;
-  radiusBottom: number;
-  radiusTop: number;
-};
+export type LeafKind = "common" | "message";
 
 export type LeafNode = {
+  /** ponto de insercao do peciolo no galho */
   position: THREE.Vector3;
+  /** eixo da lamina, da base para a ponta */
   direction: THREE.Vector3;
+  /** normal da face da folha (define o roll) */
+  normal: THREE.Vector3;
   scale: number;
   phase: number;
-  isSpecial: boolean;
-  variant: 0 | 1 | 2 | 3;
-  stretchX: number;
-  stretchY: number;
-  roll: number;
+  variant: number;
+  /** 0 = interior sombreado, 1 = borda da copa exposta ao sol */
+  exposure: number;
+  kind: LeafKind;
 };
 
 export type TreeData = {
-  trunk: BranchCurve;
-  roots: RootCurve[];
-  branches: BranchCurve[];
+  branches: BranchSegment[];
+  roots: BranchSegment[];
   leaves: LeafNode[];
+  messageLeaves: LeafNode[];
+  height: number;
+  crownRadius: number;
+  crownCenter: THREE.Vector3;
 };
 
-type GenerateTreeOptions = {
-  maxDepth: number;
-  baseLength: number;
-  trunkHeight: number;
-  initialRadius: number;
-  leafDensity: number;
-  leafTarget?: number;
+export type GenerateTreeOptions = {
   seed: number;
+  /** ordens de ramificacao lateral (4 = copa densa, 3 = mais leve) */
+  maxOrder: number;
+  trunkHeight: number;
+  trunkRadius: number;
+  /** quantidade alvo de folhas comuns depois da amostragem */
+  leafTarget: number;
+  /** quantidade de folhas com mensagem */
+  messageLeafCount: number;
+  /** multiplicador de folhas por raminho */
+  leafDensity: number;
 };
 
-function rng(seed: number) {
-  let value = seed;
+const UP = new THREE.Vector3(0, 1, 0);
+const X_AXIS = new THREE.Vector3(1, 0, 0);
+const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+
+const MIN_RADIUS = 0.0045;
+const MIN_LENGTH = 0.09;
+const MAX_SEGMENTS = 1500;
+
+type LevelPreset = {
+  lateralsMin: number;
+  lateralsMax: number;
+  /** faixa do eixo pai onde os laterais nascem */
+  attachFrom: number;
+  attachTo: number;
+  /** angulo de abertura do lateral em relacao ao pai (rad) */
+  angleMin: number;
+  angleMax: number;
+  /** razao de comprimento lateral/pai */
+  lengthRatio: number;
+  /** razao raio-do-lateral / raio-do-pai-no-ponto-de-insercao */
+  radiusRatio: number;
+  /** afilamento do proprio eixo, do inicio ao fim */
+  taper: number;
+  /** comprimento da continuacao apical relativo ao eixo atual */
+  continueRatio: number;
+  segments: number;
+  /** forca do fototropismo */
+  upBias: number;
+  /** peso da gravidade nas pontas */
+  droop: number;
+  /** afastamento do eixo vertical do tronco */
+  spread: number;
+  /** amplitude da sinuosidade organica */
+  curveAmp: number;
+};
+
+const LEVELS: LevelPreset[] = [
+  // 0 - tronco
+  {
+    lateralsMin: 3,
+    lateralsMax: 4,
+    attachFrom: 0.44,
+    attachTo: 0.99,
+    angleMin: 0.6,
+    angleMax: 1.0,
+    lengthRatio: 0.78,
+    radiusRatio: 0.56,
+    taper: 0.72,
+    continueRatio: 0.7,
+    segments: 9,
+    upBias: 1.4,
+    droop: 0,
+    spread: 0.03,
+    curveAmp: 0.05,
+  },
+  // 1 - galhos estruturais
+  {
+    lateralsMin: 2,
+    lateralsMax: 4,
+    attachFrom: 0.3,
+    attachTo: 0.97,
+    angleMin: 0.55,
+    angleMax: 1.05,
+    lengthRatio: 0.7,
+    radiusRatio: 0.5,
+    taper: 0.66,
+    continueRatio: 0.76,
+    segments: 7,
+    upBias: 0.52,
+    droop: 0.1,
+    spread: 0.5,
+    curveAmp: 0.1,
+  },
+  // 2 - galhos secundarios
+  {
+    lateralsMin: 2,
+    lateralsMax: 3,
+    attachFrom: 0.26,
+    attachTo: 0.96,
+    angleMin: 0.6,
+    angleMax: 1.15,
+    lengthRatio: 0.66,
+    radiusRatio: 0.5,
+    taper: 0.62,
+    continueRatio: 0.74,
+    segments: 6,
+    upBias: 0.24,
+    droop: 0.26,
+    spread: 0.42,
+    curveAmp: 0.15,
+  },
+  // 3 - ramos finos
+  {
+    lateralsMin: 2,
+    lateralsMax: 3,
+    attachFrom: 0.24,
+    attachTo: 0.95,
+    angleMin: 0.65,
+    angleMax: 1.25,
+    lengthRatio: 0.62,
+    radiusRatio: 0.52,
+    taper: 0.58,
+    continueRatio: 0.72,
+    segments: 5,
+    upBias: 0.1,
+    droop: 0.4,
+    spread: 0.3,
+    curveAmp: 0.2,
+  },
+  // 4+ - raminhos
+  {
+    lateralsMin: 1,
+    lateralsMax: 3,
+    attachFrom: 0.2,
+    attachTo: 0.94,
+    angleMin: 0.7,
+    angleMax: 1.35,
+    lengthRatio: 0.6,
+    radiusRatio: 0.54,
+    taper: 0.5,
+    continueRatio: 0.7,
+    segments: 4,
+    upBias: 0.04,
+    droop: 0.55,
+    spread: 0.2,
+    curveAmp: 0.26,
+  },
+];
+
+function createRng(seed: number) {
+  let state = (seed | 0) || 1;
   return () => {
-    value = (Math.imul(1664525, value) + 1013904223) | 0;
-    return (value >>> 0) / 4294967296;
+    state = (Math.imul(1664525, state) + 1013904223) | 0;
+    return (state >>> 0) / 4294967296;
   };
 }
 
-export function generateFractalTree(options: GenerateTreeOptions): TreeData {
-  const random = rng(options.seed);
-  const branches: BranchCurve[] = [];
-  const zoneLeaves: Record<"A" | "B" | "C", LeafNode[]> = { A: [], B: [], C: [] };
-  const roots: RootCurve[] = [];
+/** perfil de afilamento: base cheia, ponta fina */
+export function radiusAtParam(radiusBottom: number, radiusTop: number, t: number) {
+  return radiusTop + (radiusBottom - radiusTop) * Math.pow(1 - t, 1.35);
+}
 
-  const up = new THREE.Vector3(0, 1, 0);
-  const radial = new THREE.Vector3();
-  const tangentFrame = new THREE.Quaternion();
-  let highestBranchTip = new THREE.Vector3(0, options.trunkHeight, 0);
+export function generateTree(options: GenerateTreeOptions): TreeData {
+  const random = createRng(options.seed);
+  const branches: BranchSegment[] = [];
+  const roots: BranchSegment[] = [];
+  const rawLeaves: LeafNode[] = [];
 
-  const pushLeafCluster = (
-    center: THREE.Vector3,
-    branchDirection: THREE.Vector3,
-    count: number,
-    spread: number,
-    scaleMin: number,
-    scaleMax: number,
-    zone: "A" | "B" | "C", // A = Tip, B = Transition, C = Interior
-  ) => {
-    tangentFrame.setFromUnitVectors(up, branchDirection.clone().normalize());
+  let segmentBudget = MAX_SEGMENTS;
 
-    for (let index = 0; index < count; index += 1) {
-      const angle = random() * Math.PI * 2;
+  const scratch = new THREE.Vector3();
 
-      // Spacing based on zone
-      const distanceMod = zone === "C" ? 0.35 + random() * 0.65 : 0.2 + random() * 0.8;
-      const distance = spread * distanceMod;
-
-      radial.set(Math.cos(angle) * distance, (random() - 0.45) * spread * 0.7, Math.sin(angle) * distance);
-      radial.applyQuaternion(tangentFrame);
-
-      const leafPos = center.clone().add(radial);
-
-      const radialNormal = radial.lengthSq() > 0.0001 ? radial.clone().normalize() : branchDirection.clone();
-      let leafDir: THREE.Vector3;
-
-      if (zone === "A" || zone === "B") {
-        const canopyLift = zone === "A" ? 0.22 : 0.16;
-        leafDir = radialNormal
-          .multiplyScalar(zone === "A" ? 0.84 : 0.76)
-          .add(branchDirection.clone().multiplyScalar(0.6))
-          .add(up.clone().multiplyScalar(canopyLift))
-          .normalize();
-
-        if (leafDir.y < 0.08) {
-          leafDir.y = 0.08 + random() * 0.12;
-          leafDir.normalize();
-        }
-      } else {
-        const pointUp = random() < 0.24;
-        if (pointUp) {
-          leafDir = branchDirection.clone().lerp(up, 0.35 + random() * 0.35).normalize();
-        } else {
-          const latTilt = new THREE.Vector3((random() - 0.5) * 1.2, (random() - 0.3) * 0.26, (random() - 0.5) * 1.2);
-          leafDir = branchDirection.clone().lerp(up, 0.08).add(latTilt).normalize();
-        }
-      }
-
-      // Zone-specific rotation bounds (X: -0.8 to 0.8, Z: -0.5 to 0.5)
-      const baseStretchX = 0.82 + random() * 0.4;
-      const baseStretchY = 0.82 + random() * 0.4;
-
-      let finalScaleMin = scaleMin;
-      let finalScaleMax = scaleMax;
-
-      if (zone === "A") {
-        finalScaleMin *= 0.78; finalScaleMax *= 0.9;
-      } else if (zone === "B") {
-        finalScaleMin *= 0.82; finalScaleMax *= 0.98;
-      } else if (zone === "C") {
-        finalScaleMin *= 0.88; finalScaleMax *= 1.08;
-      }
-
-      const variantRoll = random();
-      // Percentages: A:35%, B:30%, C:20%, D:15%
-      const variant = variantRoll < 0.35 ? 0 : variantRoll < 0.65 ? 1 : variantRoll < 0.85 ? 2 : 3;
-
-      zoneLeaves[zone].push({
-        position: leafPos,
-        direction: leafDir,
-        scale: (finalScaleMin + random() * (finalScaleMax - finalScaleMin)) * 0.8,
-        phase: random() * Math.PI * 2,
-        isSpecial: random() > 0.95,
-        variant,
-        stretchX: baseStretchX,
-        stretchY: baseStretchY,
-        roll: (random() - 0.5) * 1.0, // Z tilt equivalent
-      });
-    }
-  };
-
-  // 1. Trunk
-  const trunkPoints = [];
-  const currentPos = new THREE.Vector3(0, 0, 0);
-  const sway = new THREE.Vector3((random() - 0.5) * 0.06, 0, (random() - 0.5) * 0.06);
-  const trunkSegments = 8;
-  const trunkStep = options.trunkHeight / trunkSegments;
-
-  for (let i = 0; i <= trunkSegments; i++) {
-    const t = i / trunkSegments;
-    trunkPoints.push(currentPos.clone());
-    sway.x += (random() - 0.5) * 0.03;
-    sway.z += (random() - 0.5) * 0.03;
-
-    const trunkDir = new THREE.Vector3(sway.x * (0.35 + t * 0.4), 1, sway.z * (0.35 + t * 0.4)).normalize();
-    currentPos.add(trunkDir.clone().multiplyScalar(trunkStep));
+  /** dois vetores perpendiculares ao tangente, formando um frame estavel */
+  function perpendicularFrame(tangent: THREE.Vector3, outSide: THREE.Vector3, outUp: THREE.Vector3) {
+    const reference = Math.abs(tangent.y) > 0.92 ? X_AXIS : UP;
+    outSide.crossVectors(tangent, reference).normalize();
+    outUp.crossVectors(tangent, outSide).normalize();
   }
 
-  const trunkCurve = new THREE.CatmullRomCurve3(trunkPoints);
-  trunkCurve.curveType = "catmullrom";
-  trunkCurve.tension = 0.58;
+  /**
+   * Quem carrega folha e o raminho FINO, nao a "ordem" da recursao.
+   * A continuacao apical mantem a ordem do pai, entao um galho de ordem 0 pode
+   * terminar fininho la no alto: se olhassemos so a ordem, ele viraria uma vara
+   * pelada. Aqui a densidade vem do raio.
+   */
+  const leafRadiusThreshold = options.trunkRadius * 0.11;
 
-  const trunkRadiusTop = options.initialRadius * 0.42;
-  const trunk: BranchCurve = {
-    curve: trunkCurve,
-    radiusBottom: options.initialRadius,
-    radiusTop: trunkRadiusTop,
-    depth: 0,
-  };
-
-  // 2. Roots
-  const numRoots = 3 + Math.floor(random() * 3);
-  for (let i = 0; i < numRoots; i++) {
-    const rootAngle = (i / numRoots) * Math.PI * 2 + (random() - 0.5) * 0.38;
-    const rootDir = new THREE.Vector3(Math.cos(rootAngle), -0.35, Math.sin(rootAngle)).normalize();
-
-    const rootPoints = [new THREE.Vector3(0, options.trunkHeight * 0.06, 0)];
-    const rPos = rootPoints[0].clone();
-    const rDir = rootDir.clone();
-    const rSegments = 4;
-    const rStep = (options.initialRadius * 1.75) / rSegments;
-
-    for (let j = 0; j < rSegments; j++) {
-      rDir.y -= 0.16;
-      rDir.normalize();
-      rDir.x += (random() - 0.5) * 0.18;
-      rDir.z += (random() - 0.5) * 0.18;
-      rDir.normalize();
-
-      rPos.add(rDir.clone().multiplyScalar(rStep));
-      if (rPos.y < -0.14) rPos.y = -0.14;
-      rootPoints.push(rPos.clone());
-    }
-
-    const rootCurve = new THREE.CatmullRomCurve3(rootPoints);
-    rootCurve.curveType = "catmullrom";
-    rootCurve.tension = 0.7;
-
-    roots.push({
-      curve: rootCurve,
-      radiusBottom: options.initialRadius * 0.42,
-      radiusTop: Math.max(0.008, options.initialRadius * 0.24),
-    });
-  }
-
-  // 3. Branches + layered foliage
-  function grow(
-    origin: THREE.Vector3,
-    direction: THREE.Vector3,
-    length: number,
+  function emitLeaves(
+    curve: THREE.CatmullRomCurve3,
+    axisLength: number,
+    roll: number,
     radiusBottom: number,
-    depth: number
+    radiusTop: number,
   ) {
-    if (depth > options.maxDepth) {
-      const terminalCount = Math.floor(options.leafDensity * (4.0 + random() * 2.0) * (3.2 + random() * 0.9));
-      pushLeafCluster(origin, direction, terminalCount, 0.35 + random() * 0.15, 0.82, 1.22, "A");
+    const thinness = radiusTop / leafRadiusThreshold;
+    const leafiness = THREE.MathUtils.clamp(1.7 - thinness, 0, 1);
+
+    if (leafiness <= 0.01) {
       return;
     }
 
-      // Branch counts: 4-6 primary, 2-4 secondary
-      const childCount = depth === 0 ? 4 + Math.floor(random() * 2) : depth === 1 ? 3 + Math.floor(random() * 2) : 2 + Math.floor(random() * 2);
-      const baseYaw = random() * Math.PI * 2;
+    const count = Math.max(
+      0,
+      Math.round(axisLength * 34 * options.leafDensity * leafiness * (0.75 + random() * 0.5)),
+    );
 
-    for (let child = 0; child < childCount; child += 1) {
-      const bPoints = [origin.clone()];
-      const cPos = origin.clone();
+    if (count === 0) {
+      return;
+    }
 
-      const branchLength = length * (depth === 0 ? 0.82 + random() * 0.16 : 0.7 + random() * 0.18);
-      const yaw = baseYaw + (child / childCount) * Math.PI * 2 + (random() - 0.5) * 0.28;
-      const lateral = new THREE.Vector3(Math.cos(yaw), 0, Math.sin(yaw));
+    const side = new THREE.Vector3();
+    const upSide = new THREE.Vector3();
 
-      const outwardWeight = depth === 0 ? 1.05 : depth === 1 ? 0.86 : 0.6;
-      const verticalLift = depth === 0 ? 0.4 : depth === 1 ? 0.15 : -0.12 * (depth - 1);
+    for (let index = 0; index < count; index += 1) {
+      // folhas se concentram na metade distal do raminho
+      const t = THREE.MathUtils.clamp(
+        0.26 + (index / Math.max(1, count - 1)) * 0.74 + (random() - 0.5) * 0.06,
+        0,
+        1,
+      );
+      const point = curve.getPointAt(t);
+      const tangent = curve.getTangentAt(t).normalize();
 
-      const cDir = direction
+      perpendicularFrame(tangent, side, upSide);
+
+      const phyllotaxis = roll + index * GOLDEN_ANGLE + random() * 0.2;
+      const radial = side
         .clone()
-        .multiplyScalar(0.72)
-        .add(lateral.multiplyScalar(outwardWeight))
-        .add(new THREE.Vector3(0, verticalLift + (random() - 0.5) * 0.08, 0))
+        .multiplyScalar(Math.cos(phyllotaxis))
+        .addScaledVector(upSide, Math.sin(phyllotaxis))
         .normalize();
 
-      // Curvature recommended: horiz 0.03-0.12, vert 0.02-0.09
-      const bSegments = depth === 0 ? 6 : depth <= 2 ? 5 : 4;
-      const bend = new THREE.Vector3((random() - 0.5) * 0.09, (random() - 0.12) * 0.06, (random() - 0.5) * 0.09);
+      // eixo da lamina: abre em relacao ao raminho, busca luz e pende na ponta
+      const openAngle = 0.8 + random() * 0.55;
+      const blade = tangent
+        .clone()
+        .multiplyScalar(Math.cos(openAngle))
+        .addScaledVector(radial, Math.sin(openAngle))
+        .addScaledVector(UP, 0.3 - t * 0.4)
+        .normalize();
 
-      for (let s = 1; s <= bSegments; s++) {
-        bend.x += (random() - 0.5) * 0.035;
-        bend.y += (random() - 0.5) * 0.03;
-        bend.z += (random() - 0.5) * 0.035;
-        bend.clampLength(0, 0.16);
+      const attachRadius = radiusAtParam(radiusBottom, radiusTop, t);
+      const position = point.clone().addScaledVector(radial, attachRadius * 0.9);
 
-        cDir.add(bend).normalize();
-        cPos.add(cDir.clone().multiplyScalar(branchLength / bSegments));
-        bPoints.push(cPos.clone());
+      const normal = new THREE.Vector3().crossVectors(blade, radial);
+      if (normal.lengthSq() < 1e-6) {
+        normal.copy(UP);
       }
+      normal.normalize().applyAxisAngle(blade, (random() - 0.5) * 1.15).normalize();
 
-      const bCurve = new THREE.CatmullRomCurve3(bPoints);
-      bCurve.curveType = "catmullrom";
-      bCurve.tension = 0.65;
-
-      // Recommended Taper by level: 0: 1.0, 1: 0.72, 2: 0.5, 3: 0.32, 4: 0.18
-      const taperLevels = [1.0, 0.65, 0.4, 0.2, 0.08, 0.02];
-      const taperFactor = taperLevels[Math.min(depth + 1, taperLevels.length - 1)];
-      const radiusTop = Math.max(0.008, options.initialRadius * taperFactor * (0.8 + random() * 0.4));
-
-      branches.push({
-        curve: bCurve,
-        radiusBottom,
-        radiusTop,
-        depth,
+      rawLeaves.push({
+        position,
+        direction: blade,
+        normal,
+        scale: 0.8 + random() * 0.45,
+        phase: random() * Math.PI * 2,
+        variant: random() < 0.34 ? 0 : random() < 0.72 ? 1 : 2,
+        exposure: 0,
+        kind: "common",
       });
-
-      const tipPoint = bCurve.getPointAt(0.98);
-      const tipDirection = bCurve.getTangentAt(0.98).normalize();
-      if (tipPoint.y > highestBranchTip.y) {
-        highestBranchTip = tipPoint.clone();
-      }
-
-      if (depth >= options.maxDepth - 2 && random() > 0.06) {
-        const transitionCount = Math.floor(options.leafDensity * (2.5 + random() * 1.5) * (2.1 + random() * 0.6));
-        const customPoint = bCurve.getPointAt(0.65 + random() * 0.25);
-        const customDir = bCurve.getTangentAt(0.7).normalize();
-        pushLeafCluster(customPoint, customDir, transitionCount, 0.24 + random() * 0.11, 0.8, 1.08, "B");
-      }
-
-      if (depth >= options.maxDepth - 1) {
-        const terminalCount = Math.floor(options.leafDensity * (2.0 + random() * 1.5) * (2.8 + random() * 0.8));
-        pushLeafCluster(tipPoint, tipDirection, terminalCount, 0.2 + random() * 0.1, 0.78, 1.06, "A");
-      }
-
-      const childLength = branchLength * (0.7 + random() * 0.18);
-      const nextOriginPoint = bCurve.getPointAt(0.8 + random() * 0.2);
-
-      grow(nextOriginPoint, cDir, childLength, radiusTop, depth + 1);
     }
   }
 
-  // 4. Primary canopy forks
-  const primaryForkCount = 2 + Math.floor(random() * 2);
-  const startRadius = options.initialRadius * 0.85;
+  function growAxis(
+    origin: THREE.Vector3,
+    direction: THREE.Vector3,
+    radius: number,
+    length: number,
+    order: number,
+    roll: number,
+    kind: BranchKind,
+  ) {
+    if (segmentBudget <= 0 || radius < MIN_RADIUS || length < MIN_LENGTH) {
+      return;
+    }
 
-  for (let fork = 0; fork < primaryForkCount; fork += 1) {
-    const forkHeight = 0.45 + fork * 0.1 + random() * 0.1;
-    const clampedForkHeight = Math.min(0.75, forkHeight);
-    const startPoint = trunkCurve.getPointAt(clampedForkHeight);
-    const trunkTangent = trunkCurve.getTangentAt(clampedForkHeight).normalize();
-    const yaw = (fork / primaryForkCount) * Math.PI * 2 + random() * 0.5;
-    const lateral = new THREE.Vector3(Math.cos(yaw), 0, Math.sin(yaw)).multiplyScalar(0.42 + random() * 0.18);
-    const forkDirection = trunkTangent.clone().multiplyScalar(0.72).add(lateral).add(new THREE.Vector3(0, 0.28, 0)).normalize();
+    segmentBudget -= 1;
 
-    grow(
-      startPoint,
-      forkDirection,
-      options.baseLength * (0.9 + random() * 0.18),
-      startRadius * (0.9 + random() * 0.12),
-      0,
+    const level = LEVELS[Math.min(order, LEVELS.length - 1)];
+    const steps = level.segments;
+    const stepLength = length / steps;
+
+    const points: THREE.Vector3[] = [origin.clone()];
+    const cursor = origin.clone();
+    const heading = direction.clone().normalize();
+    const bend = new THREE.Vector3();
+
+    for (let step = 1; step <= steps; step += 1) {
+      const t = step / steps;
+
+      // fototropismo: puxa para cima, mais forte na base do eixo
+      heading.addScaledVector(UP, level.upBias * stepLength * (1 - t * 0.4));
+      // gravitropismo: as pontas pendem
+      heading.addScaledVector(UP, -level.droop * stepLength * t * t);
+
+      // busca de luz: afasta do eixo vertical do tronco
+      scratch.set(cursor.x, 0, cursor.z);
+      if (scratch.lengthSq() < 1e-6) {
+        scratch.set(Math.cos(roll), 0, Math.sin(roll));
+      }
+      scratch.normalize();
+      heading.addScaledVector(scratch, level.spread * stepLength);
+
+      // sinuosidade organica com memoria (curva suave, sem zigue-zague)
+      bend.x += (random() - 0.5) * level.curveAmp * 0.6;
+      bend.y += (random() - 0.5) * level.curveAmp * 0.4;
+      bend.z += (random() - 0.5) * level.curveAmp * 0.6;
+      bend.clampLength(0, level.curveAmp);
+      heading.addScaledVector(bend, stepLength);
+
+      heading.normalize();
+      cursor.addScaledVector(heading, stepLength);
+      points.push(cursor.clone());
+    }
+
+    const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.5);
+    const radiusTop = Math.max(MIN_RADIUS * 0.4, radius * level.taper);
+
+    branches.push({
+      curve,
+      radiusBottom: radius,
+      radiusTop,
+      depth: order,
+      kind,
+      length,
+    });
+
+    // toda secao fina ganha folhas, inclusive a ponta da continuacao apical
+    emitLeaves(curve, length, roll, radius, radiusTop);
+
+    const terminal =
+      order >= options.maxOrder ||
+      radiusTop < MIN_RADIUS ||
+      length * level.continueRatio < MIN_LENGTH;
+
+    if (terminal) {
+      return;
+    }
+
+    // ---------------------------------------------------------- laterais
+    const lateralCount =
+      level.lateralsMin + Math.floor(random() * (level.lateralsMax - level.lateralsMin + 1));
+    const side = new THREE.Vector3();
+    const upSide = new THREE.Vector3();
+
+    for (let index = 0; index < lateralCount; index += 1) {
+      const spread = (index + 0.5 + (random() - 0.5) * 0.55) / lateralCount;
+      const t = THREE.MathUtils.clamp(
+        level.attachFrom + spread * (level.attachTo - level.attachFrom),
+        0.05,
+        0.99,
+      );
+
+      const attachPoint = curve.getPointAt(t);
+      const tangent = curve.getTangentAt(t).normalize();
+      perpendicularFrame(tangent, side, upSide);
+
+      const childRoll = roll + (index + 1) * GOLDEN_ANGLE + random() * 0.25;
+      const outward = side
+        .clone()
+        .multiplyScalar(Math.cos(childRoll))
+        .addScaledVector(upSide, Math.sin(childRoll))
+        .normalize();
+
+      const angle = level.angleMin + random() * (level.angleMax - level.angleMin);
+      const childDirection = tangent
+        .clone()
+        .multiplyScalar(Math.cos(angle))
+        .addScaledVector(outward, Math.sin(angle))
+        .normalize();
+
+      const attachRadius = radiusAtParam(radius, radiusTop, t);
+      const childRadius = attachRadius * level.radiusRatio * (0.86 + random() * 0.26);
+
+      // laterais mais baixos no eixo sao mais longos -> copa arredondada
+      const childLength = length * level.lengthRatio * (0.8 + random() * 0.4) * (1.14 - t * 0.36);
+
+      // nasce ligeiramente dentro do pai para a juncao nao ficar vazada
+      const childOrigin = attachPoint.clone().addScaledVector(childDirection, -attachRadius * 0.9);
+
+      growAxis(childOrigin, childDirection, childRadius, childLength, order + 1, childRoll, "branch");
+    }
+
+    // -------------------------------------------------- continuacao apical
+    const tipPoint = curve.getPointAt(1);
+    const tipTangent = curve.getTangentAt(1).normalize();
+
+    growAxis(
+      tipPoint.addScaledVector(tipTangent, -radiusTop * 0.6),
+      tipTangent,
+      radiusTop,
+      length * level.continueRatio * (0.9 + random() * 0.2),
+      order,
+      roll + GOLDEN_ANGLE * 0.5,
+      kind,
     );
   }
 
-  if (random() > 0.55) {
-    const lowStart = trunkCurve.getPointAt(0.2 + random() * 0.08);
-    const lowDir = new THREE.Vector3((random() - 0.5) * 0.95, 0.2 + random() * 0.1, (random() - 0.5) * 0.95).normalize();
-    grow(lowStart, lowDir, options.baseLength * 0.62, startRadius * 0.58, 1);
-  }
-
-  const canopyCore = highestBranchTip.clone().lerp(trunkCurve.getPointAt(0.78), 0.38);
-  pushLeafCluster(
-    canopyCore,
-    up.clone(),
-    Math.round(options.leafDensity * (12 + random() * 4)),
-    0.24 + random() * 0.08,
-    0.82,
-    1.04,
-    "C",
+  // --------------------------------------------------------------- tronco
+  const trunkLean = new THREE.Vector3((random() - 0.5) * 0.09, 1, (random() - 0.5) * 0.09).normalize();
+  growAxis(
+    new THREE.Vector3(0, 0, 0),
+    trunkLean,
+    options.trunkRadius,
+    options.trunkHeight,
+    0,
+    random() * Math.PI * 2,
+    "trunk",
   );
 
-  for (let halo = 0; halo < 3; halo += 1) {
-    const haloAngle = (halo / 3) * Math.PI * 2 + random() * 0.45;
-    const haloOffset = new THREE.Vector3(
-      Math.cos(haloAngle) * (0.18 + random() * 0.05),
-      (random() - 0.15) * 0.12,
-      Math.sin(haloAngle) * (0.18 + random() * 0.05),
+  // ------------------------------------------------------------ sapopemas
+  const rootCount = 4 + Math.floor(random() * 3);
+  const rootBaseRoll = random() * Math.PI * 2;
+
+  for (let index = 0; index < rootCount; index += 1) {
+    const angle = rootBaseRoll + (index / rootCount) * Math.PI * 2 + (random() - 0.5) * 0.42;
+    const outward = new THREE.Vector3(Math.cos(angle), 0, Math.sin(angle));
+    const reach = options.trunkRadius * (2.3 + random() * 1.6);
+
+    const start = new THREE.Vector3(0, options.trunkRadius * (0.85 + random() * 0.6), 0);
+    const points = [start.clone()];
+    const position = start.clone();
+    const heading = outward.clone().addScaledVector(UP, -0.3).normalize();
+
+    const steps = 4;
+    for (let step = 1; step <= steps; step += 1) {
+      heading.addScaledVector(UP, -0.34);
+      heading.x += (random() - 0.5) * 0.18;
+      heading.z += (random() - 0.5) * 0.18;
+      heading.normalize();
+      position.addScaledVector(heading, reach / steps);
+      position.y = Math.max(position.y, -0.14);
+      points.push(position.clone());
+    }
+
+    roots.push({
+      curve: new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.6),
+      radiusBottom: options.trunkRadius * (0.48 + random() * 0.18),
+      radiusTop: options.trunkRadius * 0.11,
+      depth: 0,
+      kind: "root",
+      length: reach,
+    });
+  }
+
+  // ------------------------------------------------------ metricas da copa
+  let maxY = options.trunkHeight;
+  let crownRadius = 0.001;
+  const crownCenter = new THREE.Vector3();
+
+  for (const leaf of rawLeaves) {
+    maxY = Math.max(maxY, leaf.position.y);
+    crownRadius = Math.max(crownRadius, Math.hypot(leaf.position.x, leaf.position.z));
+    crownCenter.add(leaf.position);
+  }
+
+  if (rawLeaves.length > 0) {
+    crownCenter.divideScalar(rawLeaves.length);
+  } else {
+    crownCenter.set(0, options.trunkHeight, 0);
+  }
+
+  const verticalSpan = Math.max(0.6, maxY - crownCenter.y);
+  for (const leaf of rawLeaves) {
+    const horizontal = Math.hypot(leaf.position.x - crownCenter.x, leaf.position.z - crownCenter.z);
+    const vertical = THREE.MathUtils.clamp((leaf.position.y - crownCenter.y) / verticalSpan, -1, 1);
+    leaf.exposure = THREE.MathUtils.clamp(
+      (horizontal / Math.max(0.4, crownRadius)) * 0.62 + (vertical * 0.5 + 0.5) * 0.38,
+      0,
+      1,
     );
-
-    pushLeafCluster(
-      canopyCore.clone().add(haloOffset),
-      up.clone().lerp(haloOffset.clone().normalize(), 0.28).normalize(),
-      Math.round(options.leafDensity * (7 + random() * 3)),
-      0.18 + random() * 0.05,
-      0.78,
-      0.98,
-      "C",
-    );
   }
 
-  const targetLeafCount = Math.max(120, options.leafTarget ?? Math.round(220 + options.leafDensity * 40));
-  const zoneTargets = {
-    A: Math.round(targetLeafCount * 0.56),
-    B: Math.round(targetLeafCount * 0.28),
-    C: Math.max(0, targetLeafCount - Math.round(targetLeafCount * 0.56) - Math.round(targetLeafCount * 0.28)),
+  // ------------------------------------------- selecao das folhas-mensagem
+  const messageLeaves = pickMessageLeaves(rawLeaves, options.messageLeafCount, random);
+  const messageSources = new Set(messageLeaves.map((leaf) => leaf.position));
+
+  const commonPool = rawLeaves.filter((leaf) => !messageSources.has(leaf.position));
+  const leaves = sampleLeaves(commonPool, options.leafTarget, random);
+
+  return {
+    branches,
+    roots,
+    leaves,
+    messageLeaves,
+    height: maxY,
+    crownRadius,
+    crownCenter,
   };
+}
 
-  const shuffle = <T>(input: T[]) => {
-    const copy = input.slice();
-    for (let i = copy.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(random() * (i + 1));
-      const current = copy[i];
-      copy[i] = copy[j];
-      copy[j] = current;
+/**
+ * Escolhe folhas bem espalhadas (um setor angular por folha) e preferencialmente
+ * na borda ensolarada da copa, para que fiquem visiveis de qualquer angulo.
+ */
+function pickMessageLeaves(pool: LeafNode[], count: number, random: () => number): LeafNode[] {
+  if (pool.length === 0 || count <= 0) {
+    return [];
+  }
+
+  const bestBySector = new Map<number, LeafNode>();
+  const bestScore = new Map<number, number>();
+
+  for (const leaf of pool) {
+    if (leaf.exposure < 0.34) {
+      continue;
     }
-    return copy;
-  };
 
-  const take = <T>(input: T[], count: number) => {
-    if (count <= 0 || input.length === 0) {
-      return [] as T[];
-    }
+    const angle = Math.atan2(leaf.position.z, leaf.position.x);
+    const sector = Math.min(count - 1, Math.floor(((angle + Math.PI) / (Math.PI * 2)) * count));
+    const score = leaf.exposure * 0.75 + leaf.position.y * 0.06 + random() * 0.22;
 
-    const available = shuffle(input);
-    return available.slice(0, Math.min(count, available.length));
-  };
-
-  const composedLeaves: LeafNode[] = [];
-  const taken = new Set<LeafNode>();
-
-  for (const zone of ["A", "B", "C"] as const) {
-    const selected = take(zoneLeaves[zone], zoneTargets[zone]);
-    for (const leaf of selected) {
-      taken.add(leaf);
-      composedLeaves.push(leaf);
+    if (!bestBySector.has(sector) || score > (bestScore.get(sector) as number)) {
+      bestScore.set(sector, score);
+      bestBySector.set(sector, leaf);
     }
   }
 
-  if (composedLeaves.length < targetLeafCount) {
-    const pool = [...zoneLeaves.A, ...zoneLeaves.B, ...zoneLeaves.C].filter((leaf) => !taken.has(leaf));
-    const refill = take(pool, targetLeafCount - composedLeaves.length);
-    composedLeaves.push(...refill);
+  const selected = [...bestBySector.values()];
+
+  // completa com as folhas mais expostas caso algum setor esteja vazio
+  if (selected.length < count) {
+    const used = new Set(selected);
+    const rest = pool
+      .filter((leaf) => !used.has(leaf))
+      .sort((a, b) => b.exposure - a.exposure)
+      .slice(0, count - selected.length);
+    selected.push(...rest);
   }
 
-  if (composedLeaves.length < targetLeafCount) {
-    const fallbackPool = [...zoneLeaves.A, ...zoneLeaves.B, ...zoneLeaves.C];
-    while (composedLeaves.length < targetLeafCount && fallbackPool.length > 0) {
-      const source = fallbackPool[Math.floor(random() * fallbackPool.length)];
-      const offset = new THREE.Vector3((random() - 0.5) * 0.03, (random() - 0.5) * 0.03, (random() - 0.5) * 0.03);
-      composedLeaves.push({
-        ...source,
-        position: source.position.clone().add(offset),
-        phase: random() * Math.PI * 2,
-      });
-    }
+  return selected.slice(0, count).map((leaf) => ({
+    ...leaf,
+    direction: leaf.direction.clone(),
+    normal: leaf.normal.clone(),
+    kind: "message" as const,
+    // folhas com mensagem sao visivelmente maiores
+    scale: leaf.scale * 1.65,
+    variant: 3,
+  }));
+}
+
+/** amostragem uniforme com embaralhamento deterministico */
+function sampleLeaves(pool: LeafNode[], target: number, random: () => number): LeafNode[] {
+  if (pool.length <= target) {
+    return pool;
   }
 
-  return { trunk, roots, branches, leaves: composedLeaves };
+  const copy = pool.slice();
+  for (let index = copy.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(random() * (index + 1));
+    const temp = copy[index];
+    copy[index] = copy[swap];
+    copy[swap] = temp;
+  }
+
+  return copy.slice(0, target);
 }

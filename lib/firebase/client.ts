@@ -44,6 +44,26 @@ export async function getFirebaseClientAuth(): Promise<Auth | null> {
   return authPromise;
 }
 
+/**
+ * ID token da sessao anonima, para autenticar as chamadas de API.
+ * Devolve `null` quando o Firebase nao esta configurado — nesse caso o backend
+ * roda em modo local e aceita o `sessionId` do corpo.
+ */
+export async function getSessionIdToken(): Promise<string | null> {
+  const auth = await getFirebaseClientAuth();
+  const user = auth?.currentUser;
+
+  if (!user) {
+    return null;
+  }
+
+  try {
+    return await user.getIdToken();
+  } catch {
+    return null;
+  }
+}
+
 export async function bindAnonymousSession(onSessionId: (sessionId: string) => void): Promise<(() => void) | null> {
   const auth = await getFirebaseClientAuth();
   if (!auth) {

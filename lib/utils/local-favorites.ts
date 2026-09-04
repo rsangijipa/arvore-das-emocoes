@@ -1,4 +1,6 @@
-const STORAGE_PREFIX = "harvore.favorites";
+import { FAVORITES_PREFIX } from "@/lib/utils/storage";
+
+const STORAGE_PREFIX = FAVORITES_PREFIX;
 
 function storageKey(sessionId: string): string {
   return `${STORAGE_PREFIX}.${sessionId}`;
@@ -27,7 +29,11 @@ export function saveFavorites(sessionId: string, quoteIds: string[]): void {
     return;
   }
 
-  window.localStorage.setItem(storageKey(sessionId), JSON.stringify(quoteIds));
+  try {
+    window.localStorage.setItem(storageKey(sessionId), JSON.stringify(quoteIds));
+  } catch {
+    // cota cheia ou armazenamento bloqueado: a nuvem continua sendo a fonte
+  }
 }
 
 export function mergeFavoriteIds(...groups: string[][]): string[] {

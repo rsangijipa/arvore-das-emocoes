@@ -10,7 +10,8 @@ export function ServiceWorkerRegistration() {
 
     const register = async () => {
       try {
-        await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+        const version = process.env.NEXT_PUBLIC_SW_VERSION ?? "dev";
+        await navigator.serviceWorker.register(`/sw.js?v=${version}`, { scope: "/" });
       } catch {
         // Sem interrupcao da experiencia principal.
       }

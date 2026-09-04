@@ -1,4 +1,7 @@
-const CACHE_VERSION = "harvore-v1";
+// A versao chega pela query string do registro (/sw.js?v=<build id>): arquivo
+// estatico nao le variaveis de build. Trocar a versao a cada deploy garante que
+// o `activate` abaixo apague o app shell antigo.
+const CACHE_VERSION = new URL(self.location.href).searchParams.get("v") || "dev";
 const SHELL_CACHE = `${CACHE_VERSION}-shell`;
 const RUNTIME_CACHE = `${CACHE_VERSION}-runtime`;
 const API_CACHE = `${CACHE_VERSION}-api`;

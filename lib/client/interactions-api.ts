@@ -1,4 +1,16 @@
+import { getSessionIdToken } from "@/lib/firebase/client";
 import type { FavoritePayload, InteractionPayload } from "@/types/quote";
+
+/**
+ * As rotas exigem o ID token do Firebase quando ele esta configurado: o dono das
+ * favoritas passou a ser o `uid` do token, nunca o id que o cliente manda.
+ */
+async function authHeaders(): Promise<HeadersInit> {
+  const token = await getSessionIdToken();
+  return token
+    ? { "Content-Type": "application/json", Authorization: `Bearer ${token}` }
+    : { "Content-Type": "application/json" };
+}
 
 const INTERACTION_BATCH_SIZE = 12;
 const INTERACTION_FLUSH_MS = 2500;
@@ -22,7 +34,7 @@ async function flushInteractionQueue(): Promise<void> {
 
       const success = await fetch("/api/interactions", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: await authHeaders(),
         keepalive: true,
         body: JSON.stringify(payload),
       })
@@ -87,7 +99,7 @@ export async function postInteraction(payload: InteractionPayload): Promise<void
 export async function postFavorite(payload: FavoritePayload): Promise<void> {
   await fetch("/api/favorites", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: await authHeaders(),
     keepalive: true,
     body: JSON.stringify(payload),
   }).catch(() => undefined);
@@ -96,6 +108,7 @@ export async function postFavorite(payload: FavoritePayload): Promise<void> {
 export async function fetchFavorites(sessionId: string): Promise<string[]> {
   const response = await fetch(`/api/favorites?sessionId=${encodeURIComponent(sessionId)}`, {
     cache: "no-store",
+    headers: await authHeaders(),
   });
 
   if (!response.ok) {

@@ -37,7 +37,10 @@ export type ThemeOption = {
   color: string;
 };
 
-export type InteractionAction = "hover" | "click" | "favorite" | "random" | "theme_filter";
+/** acoes de telemetria aceitas pela API — usada como allowlist no servidor */
+export const INTERACTION_ACTIONS = ["click", "favorite", "random", "theme_filter"] as const;
+
+export type InteractionAction = (typeof INTERACTION_ACTIONS)[number];
 
 export type InteractionPayload = {
   sessionId: string;

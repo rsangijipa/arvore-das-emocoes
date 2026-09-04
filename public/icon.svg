@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Arvore das Emocoes">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#12203A"/>
+      <stop offset="1" stop-color="#0B1424"/>
+    </linearGradient>
+    <linearGradient id="blade" x1="0.15" y1="0.9" x2="0.85" y2="0.1">
+      <stop offset="0" stop-color="#4E7A32"/>
+      <stop offset="0.55" stop-color="#8FBF52"/>
+      <stop offset="1" stop-color="#E8DE93"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#sky)"/>
+  <path d="M256 430 C256 330 262 268 300 208" fill="none" stroke="#6B4A2E" stroke-width="20" stroke-linecap="round"/>
+  <path d="M300 208 C220 232 150 190 132 118 C214 96 288 138 300 208 Z" fill="url(#blade)"/>
+  <path d="M300 208 C380 232 450 190 468 118 C386 96 312 138 300 208 Z" fill="url(#blade)" opacity="0.82"/>
+  <path d="M300 208 C268 168 216 142 152 130" fill="none" stroke="#2E4A1C" stroke-width="8" stroke-linecap="round" opacity="0.55"/>
+  <path d="M300 208 C332 168 384 142 448 130" fill="none" stroke="#2E4A1C" stroke-width="8" stroke-linecap="round" opacity="0.45"/>
+  <circle cx="256" cy="438" r="46" fill="#0B1424" opacity="0.6"/>
+</svg>

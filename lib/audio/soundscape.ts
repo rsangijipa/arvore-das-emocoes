@@ -27,8 +27,8 @@ export class Soundscape {
 
     if (!this.sounds) {
       this.sounds = {
-        hover: createSound(["/sounds/wind-chime-single.mp3"], 0.15),
-        click: createSound(["/sounds/leaf-rustle.mp3"], 0.3),
+        hover: createSound(["/audio/leaf-hover.mp3"], 0.15),
+        click: createSound(["/audio/leaf-click.mp3"], 0.3),
         random: createSound(["/audio/quote-random.mp3"], 0.16),
         favorite: createSound(["/audio/favorite-soft.mp3"], 0.18),
       };

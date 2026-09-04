@@ -6,9 +6,9 @@ import { ChevronLeft, ChevronRight, Heart, RefreshCw, SlidersHorizontal } from "
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { FavoritesDrawer } from "@/components/ui/FavoritesDrawer";
-import { MobileQuoteSheet } from "@/components/ui/MobileQuoteSheet";
-import { QuotePanel } from "@/components/ui/QuotePanel";
+import { LeafMessageCard } from "@/components/ui/LeafMessageCard";
 import { ThemeFilter } from "@/components/ui/ThemeFilter";
+import { themeLabel } from "@/data/labels";
 import { THEMES } from "@/data/themes";
 import { usePerformanceMode } from "@/hooks/usePerformanceMode";
 import { useReducedMotionPreference } from "@/hooks/useReducedMotionPreference";
@@ -16,20 +16,13 @@ import { useSessionId } from "@/hooks/useSessionId";
 import { useSoundscape } from "@/hooks/useSoundscape";
 import { fetchFavorites, postFavorite, postInteraction } from "@/lib/client/interactions-api";
 import { fetchQuotesByTheme } from "@/lib/client/quote-api";
+import { createTreeSeed, MESSAGE_LEAF_COUNT } from "@/lib/theme/scene-tokens";
 import { loadFavorites, mergeFavoriteIds, saveFavorites } from "@/lib/utils/local-favorites";
+import { INTRO_STORAGE_KEY, migrateLegacyStorage } from "@/lib/utils/storage";
+import type { TreeSceneApi } from "@/components/3d/TreeScene";
 import { useQuoteStore } from "@/store/useQuoteStore";
 import type { QualityProfile } from "@/types/performance";
 import type { Quote } from "@/types/quote";
-
-const INTRO_STORAGE_KEY = "harvore.onboarding.dismissed";
-
-function getInitialIntroVisibility() {
-  if (typeof window === "undefined") {
-    return true;
-  }
-
-  return window.localStorage.getItem(INTRO_STORAGE_KEY) !== "1";
-}
 
 const TreeScene = dynamic(() => import("@/components/3d/TreeScene"), {
   ssr: false,
@@ -40,6 +33,29 @@ const TreeScene = dynamic(() => import("@/components/3d/TreeScene"), {
   ),
 });
 
+/** distribui as frases entre as folhas-mensagem de forma estável por semente */
+function buildLeafQuoteMap(quotes: Quote[], seed: number, slots: number): (Quote | null)[] {
+  if (quotes.length === 0) {
+    return Array.from({ length: slots }, () => null);
+  }
+
+  let state = (seed | 0) || 1;
+  const nextRandom = () => {
+    state = (Math.imul(1664525, state) + 1013904223) | 0;
+    return (state >>> 0) / 4294967296;
+  };
+
+  const order = quotes.map((_, index) => index);
+  for (let index = order.length - 1; index > 0; index -= 1) {
+    const swap = Math.floor(nextRandom() * (index + 1));
+    const current = order[index];
+    order[index] = order[swap];
+    order[swap] = current;
+  }
+
+  return Array.from({ length: slots }, (_, index) => quotes[order[index % order.length]] ?? null);
+}
+
 export function ExperienceRoot() {
   const sessionId = useSessionId();
   const { profile, setProfile } = usePerformanceMode();
@@ -48,13 +64,19 @@ export function ExperienceRoot() {
   const [isMobile, setIsMobile] = useState(false);
   const [loadingQuotes, setLoadingQuotes] = useState(true);
   const [sceneReady, setSceneReady] = useState(false);
-  const [showIntro, setShowIntro] = useState(() => getInitialIntroVisibility());
+  const [showIntro, setShowIntro] = useState(false);
   const [introLocked, setIntroLocked] = useState(true);
   const [showHint, setShowHint] = useState(true);
   const [favoritesOpen, setFavoritesOpen] = useState(false);
   const [favoriteFeedback, setFavoriteFeedback] = useState<string | null>(null);
   const [hudExpanded, setHudExpanded] = useState(false);
-  const [treeSeedBump, setTreeSeedBump] = useState(0);
+
+  // a árvore é sorteada a cada abertura (nunca durante o render do servidor)
+  const [treeSeed, setTreeSeed] = useState<number | null>(null);
+  const [pendingQuote, setPendingQuote] = useState<Quote | null>(null);
+
+  /** API imperativa da cena 3D (entregue por onSceneApi) */
+  const sceneApiRef = useRef<TreeSceneApi | null>(null);
 
   const favoriteFeedbackTimeout = useRef<number | null>(null);
   const hoverSoundCooldownRef = useRef(0);
@@ -77,6 +99,13 @@ export function ExperienceRoot() {
   const setPanelOpen = useQuoteStore((state) => state.setPanelOpen);
   const setQualityProfile = useQuoteStore((state) => state.setQualityProfile);
 
+  // -------------------------------------------------------------- bootstrap
+  useEffect(() => {
+    migrateLegacyStorage();
+    setTreeSeed(createTreeSeed());
+    setShowIntro(window.localStorage.getItem(INTRO_STORAGE_KEY) !== "1");
+  }, []);
+
   useEffect(() => {
     return () => {
       if (favoriteFeedbackTimeout.current) {
@@ -84,20 +113,6 @@ export function ExperienceRoot() {
       }
     };
   }, []);
-
-  useEffect(() => {
-    const onEscape = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") {
-        return;
-      }
-
-      setFavoritesOpen(false);
-      setPanelOpen(false);
-    };
-
-    window.addEventListener("keydown", onEscape);
-    return () => window.removeEventListener("keydown", onEscape);
-  }, [setPanelOpen]);
 
   useEffect(() => {
     setQualityProfile(profile);
@@ -116,12 +131,9 @@ export function ExperienceRoot() {
       return;
     }
 
-    const timeout = window.setTimeout(() => {
-      setIntroLocked(false);
-    }, 1800);
-
+    const timeout = window.setTimeout(() => setIntroLocked(false), reduceMotion ? 400 : 2600);
     return () => window.clearTimeout(timeout);
-  }, [sceneReady]);
+  }, [reduceMotion, sceneReady]);
 
   useEffect(() => {
     if (introLocked || hudAutoCollapseDoneRef.current) {
@@ -132,7 +144,7 @@ export function ExperienceRoot() {
     const timeout = window.setTimeout(() => {
       setHudExpanded(false);
       hudAutoCollapseDoneRef.current = true;
-    }, 3200);
+    }, 3600);
 
     return () => window.clearTimeout(timeout);
   }, [introLocked]);
@@ -182,6 +194,8 @@ export function ExperienceRoot() {
     try {
       const payload = await fetchQuotesByTheme("all");
       setQuotes(payload.quotes);
+    } catch {
+      // a cena continua utilizável mesmo sem rede; o painel avisa o usuário
     } finally {
       setLoadingQuotes(false);
     }
@@ -199,20 +213,10 @@ export function ExperienceRoot() {
     return quotes.filter((quote) => quote.theme === themeFilter);
   }, [quotes, themeFilter]);
 
-  useEffect(() => {
-    if (!activeQuote) {
-      return;
-    }
-
-    if (themeFilter === "all") {
-      return;
-    }
-
-    if (activeQuote.theme !== themeFilter) {
-      setActiveQuote(null);
-      setPanelOpen(false);
-    }
-  }, [activeQuote, setActiveQuote, setPanelOpen, themeFilter]);
+  const leafQuotes = useMemo(
+    () => buildLeafQuoteMap(visibleQuotes, treeSeed ?? 1, MESSAGE_LEAF_COUNT),
+    [treeSeed, visibleQuotes],
+  );
 
   const quoteById = useMemo(() => {
     const map = new Map<string, Quote>();
@@ -235,20 +239,20 @@ export function ExperienceRoot() {
 
   const themeContextLabel = useMemo(() => {
     if (themeFilter === "all") {
-      return "Exploracao livre";
+      return "Exploração livre";
     }
 
-    return THEMES.find((theme) => theme.slug === themeFilter)?.label ?? "Exploracao livre";
+    return THEMES.find((theme) => theme.slug === themeFilter)?.label ?? "Exploração livre";
   }, [themeFilter]);
+
   const primaryActionLabel = themeFilter === "all" ? "Receber mensagem" : `Receber ${themeContextLabel.toLowerCase()}`;
   const floatingHintLabel =
-    themeFilter === "all" ? "Toque uma folha" : `Toque uma folha de ${themeContextLabel.toLowerCase()}`;
+    themeFilter === "all"
+      ? "Toque uma folha luminosa"
+      : `Toque uma folha de ${themeContextLabel.toLowerCase()}`;
 
   const dismissIntro = useCallback(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(INTRO_STORAGE_KEY, "1");
-    }
-
+    window.localStorage.setItem(INTRO_STORAGE_KEY, "1");
     setShowIntro(false);
   }, []);
 
@@ -258,11 +262,6 @@ export function ExperienceRoot() {
     setPanelOpen(false);
   }, [setPanelOpen]);
 
-  const returnToTree = useCallback(() => {
-    setActiveQuote(null);
-    setPanelOpen(false);
-  }, [setActiveQuote, setPanelOpen]);
-
   const showFavoriteMessage = useCallback((message: string) => {
     setFavoriteFeedback(message);
 
@@ -270,51 +269,45 @@ export function ExperienceRoot() {
       window.clearTimeout(favoriteFeedbackTimeout.current);
     }
 
-    favoriteFeedbackTimeout.current = window.setTimeout(() => {
-      setFavoriteFeedback(null);
-    }, 1600);
+    favoriteFeedbackTimeout.current = window.setTimeout(() => setFavoriteFeedback(null), 1800);
   }, []);
 
-  const handleRandomQuote = useCallback(async () => {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setFavoritesOpen(false);
+        setPanelOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [setPanelOpen]);
+
+  // ------------------------------------------------- fluxo da folha-mensagem
+  const requestRandomLeaf = useCallback(() => {
     if (visibleQuotes.length === 0) {
       return;
     }
 
-    const eligible = activeQuote ? visibleQuotes.filter((quote) => quote.id !== activeQuote.id) : visibleQuotes;
-    const pool = eligible.length > 0 ? eligible : visibleQuotes;
-    const quote = pool[Math.floor(Math.random() * pool.length)] ?? null;
-    if (!quote) {
-      return;
-    }
-
     playRandom();
-
-    setActiveQuote(quote);
-    setPanelOpen(true);
-    dismissIntro();
-    setShowHint(false);
     setFavoritesOpen(false);
+    setShowHint(false);
+    dismissIntro();
+    sceneApiRef.current?.pickRandomLeaf();
+  }, [dismissIntro, playRandom, visibleQuotes.length]);
 
-    if (sessionId) {
-      void postInteraction({
-        sessionId,
-        actionType: "random",
-        quoteId: quote.id,
-        theme: themeFilter,
-      });
-    }
-  }, [activeQuote, dismissIntro, playRandom, sessionId, setActiveQuote, setPanelOpen, themeFilter, visibleQuotes]);
-
-  const handleLeafQuoteSelect = useCallback(
-    (quote: Quote) => {
-      playClick();
-      setActiveQuote(quote);
-      setPanelOpen(true);
+  /** a folha se soltou da árvore: reserva a frase, mas só abre no pouso */
+  const handleLeafPick = useCallback(
+    (leafIndex: number) => {
+      const quote = leafQuotes[leafIndex] ?? visibleQuotes[0] ?? null;
+      setPendingQuote(quote);
       setShowHint(false);
       dismissIntro();
       setFavoritesOpen(false);
+      playClick();
 
-      if (sessionId) {
+      if (sessionId && quote) {
         void postInteraction({
           sessionId,
           actionType: "click",
@@ -323,8 +316,22 @@ export function ExperienceRoot() {
         });
       }
     },
-    [dismissIntro, sessionId, setActiveQuote, setPanelOpen, playClick, themeFilter],
+    [dismissIntro, leafQuotes, playClick, sessionId, themeFilter, visibleQuotes],
   );
+
+  /** a folha pousou diante da câmera: agora sim mostramos a mensagem */
+  const handleLeafArrive = useCallback(() => {
+    if (!pendingQuote) {
+      return;
+    }
+
+    setActiveQuote(pendingQuote);
+    setPanelOpen(true);
+  }, [pendingQuote, setActiveQuote, setPanelOpen]);
+
+  const handleLeafReleased = useCallback(() => {
+    setPendingQuote(null);
+  }, []);
 
   const handleFavorite = useCallback(() => {
     if (!activeQuote || !sessionId) {
@@ -344,7 +351,7 @@ export function ExperienceRoot() {
       theme: themeFilter,
     });
 
-    showFavoriteMessage(isNowFavorite ? "Salvo neste dispositivo." : "Removido das favoritas da sessao.");
+    showFavoriteMessage(isNowFavorite ? "Guardada neste dispositivo." : "Removida das favoritas.");
   }, [activeQuote, playFavorite, sessionId, showFavoriteMessage, themeFilter, toggleFavorite]);
 
   const handleQualitySuggestion = useCallback(
@@ -362,6 +369,7 @@ export function ExperienceRoot() {
   const handleSelectFavorite = useCallback(
     (quote: Quote) => {
       setActiveQuote(quote);
+      setPendingQuote(quote);
       setPanelOpen(true);
       setFavoritesOpen(false);
       setShowHint(false);
@@ -382,75 +390,113 @@ export function ExperienceRoot() {
       dismissIntro();
 
       if (sessionId) {
-        void postInteraction({
-          sessionId,
-          actionType: "theme_filter",
-          theme: nextTheme,
-        });
+        void postInteraction({ sessionId, actionType: "theme_filter", theme: nextTheme });
       }
     },
     [dismissIntro, playClick, sessionId, setThemeFilter, themeFilter],
   );
 
-  const handleLeafHoverStateChange = useCallback((isHovering: boolean) => {
-    if (isHovering) {
+  const handleHoverChange = useCallback(
+    (isHovering: boolean) => {
+      if (!isHovering) {
+        return;
+      }
+
       setShowHint(false);
       const now = performance.now();
       if (now - hoverSoundCooldownRef.current > 550) {
         hoverSoundCooldownRef.current = now;
         playHover();
       }
-    }
-  }, [playHover]);
+    },
+    [playHover],
+  );
+
+  const handleSceneApi = useCallback((api: TreeSceneApi) => {
+    sceneApiRef.current = api;
+  }, []);
+
+  const handleKeyboardLeafPick = useCallback(
+    (index: number) => {
+      setFavoritesOpen(false);
+      setShowHint(false);
+      dismissIntro();
+      sceneApiRef.current?.pickLeaf(index);
+    },
+    [dismissIntro],
+  );
 
   const regenerateTree = useCallback(() => {
-    setTreeSeedBump((current) => current + 1);
+    setTreeSeed(createTreeSeed());
     setActiveQuote(null);
+    setPendingQuote(null);
     setPanelOpen(false);
-    setShowHint(false);
+    setShowHint(true);
   }, [setActiveQuote, setPanelOpen]);
 
-  const loadingOverlayVisible = loadingQuotes || !sceneReady;
+  const loadingOverlayVisible = loadingQuotes || !sceneReady || treeSeed === null;
 
   return (
     <main className="relative h-dvh w-full overflow-hidden bg-[#0D1422] text-[#EAF2FB]">
-      <div className="sr-only" aria-live="polite">
-        Arvore da Presenca. Use o botao de receber mensagem para abrir uma frase sem navegar na cena 3D. Escape fecha paineis abertos.
-      </div>
+      <h1 className="sr-only">Árvore das Emoções</h1>
+      <p className="sr-only" aria-live="polite">
+        Cada árvore é gerada do zero ao abrir a página. As folhas maiores e luminosas guardam
+        mensagens: toque uma delas, ou use o botão de receber mensagem para abrir uma frase sem
+        navegar na cena 3D. Escape fecha os painéis abertos.
+      </p>
 
-      <div className="pointer-events-auto absolute inset-0 z-0">
-        <TreeScene
-          quotes={visibleQuotes}
-          favoriteQuoteIds={favorites}
-          qualityProfile={qualityProfile}
-          activeTheme={themeFilter}
-          selectedQuoteId={panelOpen ? (activeQuote?.id ?? null) : null}
-          sessionSeedKey={sessionId || null}
-          treeSeedBump={treeSeedBump}
-          introActive={introLocked}
-          isMobile={isMobile}
-          reduceMotion={reduceMotion}
-          showTutorialMarkers={!panelOpen && !loadingOverlayVisible && showHint}
-          onSuggestProfile={handleQualitySuggestion}
-          onLeafQuoteSelect={handleLeafQuoteSelect}
-          onLeafHoverStateChange={handleLeafHoverStateChange}
-          onSceneReady={() => setSceneReady(true)}
-        />
+      {/*
+        Caminho de teclado para a cena 3D: as folhas vivem dentro do canvas e nao
+        recebem foco. Estes botoes ficam fora da tela, mas sao alcancaveis por
+        Tab e por leitor de tela, e disparam exatamente a mesma animacao.
+      */}
+      <nav className="sr-only" aria-label="Folhas com mensagem">
+        <ul>
+          {Array.from({ length: MESSAGE_LEAF_COUNT }, (_, index) => (
+            <li key={`leaf-shortcut-${index}`}>
+              <button type="button" onClick={() => handleKeyboardLeafPick(index)}>
+                Colher a folha {index + 1} de {MESSAGE_LEAF_COUNT}
+                {leafQuotes[index] ? ` — tema ${themeLabel(leafQuotes[index]!.theme)}` : ""}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </nav>
+
+      <div className="absolute inset-0 z-0">
+        {treeSeed !== null ? (
+          <TreeScene
+            seed={treeSeed}
+            qualityProfile={qualityProfile}
+            isMobile={isMobile}
+            reduceMotion={reduceMotion}
+            introActive={introLocked}
+            messageOpen={panelOpen}
+            quoteMappingKey={themeFilter}
+            onSuggestProfile={handleQualitySuggestion}
+            onSceneApi={handleSceneApi}
+            onLeafPick={handleLeafPick}
+            onLeafArrive={handleLeafArrive}
+            onLeafReleased={handleLeafReleased}
+            onHoverChange={handleHoverChange}
+            onSceneReady={() => setSceneReady(true)}
+          />
+        ) : null}
       </div>
 
       <div className="pointer-events-none absolute inset-0 z-10">
-        <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-[#0D1422]/18 to-transparent" />
-        <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-[#0D1422]/90 to-transparent" />
+        <div className="absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-[#0D1422]/16 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-[#0D1422]/80 to-transparent" />
         <AnimatePresence>
-          {panelOpen && activeQuote && (
+          {panelOpen && activeQuote ? (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.25 }}
-              className="absolute inset-0 bg-black/34"
+              transition={{ duration: 0.4 }}
+              className="absolute inset-0 bg-black/45 backdrop-blur-[2px]"
             />
-          )}
+          ) : null}
         </AnimatePresence>
       </div>
 
@@ -467,6 +513,7 @@ export function ExperienceRoot() {
                 type="button"
                 onClick={() => setHudExpanded((current) => !current)}
                 aria-label={hudExpanded ? "Recolher painel" : "Expandir painel"}
+                aria-expanded={hudExpanded}
                 className="hud-pill pointer-events-auto inline-flex h-10 w-10 items-center justify-center text-[#D6E2F0] transition hover:text-white"
               >
                 {hudExpanded ? <ChevronLeft className="h-4 w-4" /> : <SlidersHorizontal className="h-4 w-4" />}
@@ -484,9 +531,11 @@ export function ExperienceRoot() {
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <p className="text-[10px] font-semibold tracking-[0.24em] uppercase text-[#A5BCD0]">Arvore da Presenca</p>
+                        <p className="text-[10px] font-semibold tracking-[0.24em] uppercase text-[#A5BCD0]">
+                          Árvore das Emoções
+                        </p>
                         <p className="mt-1 max-w-[32ch] text-[13px] leading-snug text-[#EBF0F6] sm:text-sm">
-                          Interface viva para encontrar pequenas mensagens de coragem.
+                          Uma árvore nova a cada visita. As folhas maiores guardam mensagens.
                         </p>
                       </div>
 
@@ -503,8 +552,7 @@ export function ExperienceRoot() {
                     <div className="mt-3 flex flex-wrap items-center gap-2">
                       <button
                         type="button"
-                        onClick={() => void handleRandomQuote()}
-                        aria-label="Receber mensagem"
+                        onClick={requestRandomLeaf}
                         className="h-8 rounded-full bg-[#F2EFE8] px-4 text-[11px] font-bold text-[#1C1A17] transition hover:bg-white"
                       >
                         {primaryActionLabel}
@@ -523,8 +571,8 @@ export function ExperienceRoot() {
 
                     {showIntro ? (
                       <div className="mt-3 space-y-1 rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-3 text-[11px] text-[#DCE7F2]/80">
-                        <p>Toque uma folha para descobrir uma mensagem.</p>
-                        <p>Use os temas para afinar o clima da arvore.</p>
+                        <p>Procure as {MESSAGE_LEAF_COUNT} folhas maiores, com brilho dourado.</p>
+                        <p>Toque em uma delas: ela se solta e traz a mensagem até você.</p>
                         <p>Guarde as frases que quiser revisitar depois.</p>
                       </div>
                     ) : null}
@@ -545,7 +593,6 @@ export function ExperienceRoot() {
                           Favoritas{favorites.length > 0 ? ` (${favorites.length})` : ""}
                         </span>
                       </button>
-
                     </div>
                   </motion.div>
                 ) : null}
@@ -554,7 +601,7 @@ export function ExperienceRoot() {
           </motion.div>
 
           <AnimatePresence>
-            {!activeQuote && showHint && !loadingOverlayVisible && (
+            {!panelOpen && showHint && !loadingOverlayVisible ? (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -564,69 +611,53 @@ export function ExperienceRoot() {
               >
                 {floatingHintLabel}
               </motion.div>
-            )}
+            ) : null}
           </AnimatePresence>
         </div>
       </div>
 
       <AnimatePresence>
-        {loadingOverlayVisible && (
+        {loadingOverlayVisible ? (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-          className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-[rgba(8,12,20,0.62)]"
-        >
+            className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-[rgba(8,12,20,0.62)]"
+          >
             <p className="text-xs tracking-[0.24em] uppercase text-[#D8E5F4]">
-              {loadingQuotes ? "Carregando mensagens..." : "Ajustando atmosfera..."}
+              {loadingQuotes ? "Carregando mensagens..." : "Plantando a árvore..."}
             </p>
           </motion.div>
-        )}
+        ) : null}
       </AnimatePresence>
 
       <AnimatePresence>
-        {introLocked && !loadingOverlayVisible && (
+        {introLocked && !loadingOverlayVisible ? (
           <motion.div
             initial={{ opacity: 1 }}
-            animate={{ opacity: 1 }}
+            animate={{ opacity: 0 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.9, ease: "easeOut" }}
+            transition={{ duration: 1.2, ease: "easeOut" }}
             className="pointer-events-none absolute inset-0 z-[25] bg-black"
           />
-        )}
+        ) : null}
       </AnimatePresence>
 
-      {!isMobile && (
-        <QuotePanel
-          quote={activeQuote}
-          panelOpen={panelOpen}
-          themeLabel={themeContextLabel}
-          isFavorite={isFavorite}
-          favoriteCount={favorites.length}
-          favoriteFeedback={favoriteFeedback}
-          onClose={closePanel}
-          onRandom={() => void handleRandomQuote()}
-          onFavorite={handleFavorite}
-          onBackToTree={returnToTree}
-          onOpenFavorites={() => setFavoritesOpen(true)}
-        />
-      )}
-
-      {isMobile && (
-        <MobileQuoteSheet
-          quote={activeQuote}
-          panelOpen={panelOpen}
-          themeLabel={themeContextLabel}
-          isFavorite={isFavorite}
-          favoriteCount={favorites.length}
-          favoriteFeedback={favoriteFeedback}
-          onFavorite={handleFavorite}
-          onRandom={() => void handleRandomQuote()}
-          onClose={closePanel}
-          onBackToTree={returnToTree}
-          onOpenFavorites={() => setFavoritesOpen(true)}
-        />
-      )}
+      <LeafMessageCard
+        quote={activeQuote}
+        open={panelOpen}
+        isMobile={isMobile}
+        isFavorite={isFavorite}
+        favoriteCount={favorites.length}
+        favoriteFeedback={favoriteFeedback}
+        onFavorite={handleFavorite}
+        onRandom={() => {
+          closePanel();
+          window.setTimeout(requestRandomLeaf, 520);
+        }}
+        onClose={closePanel}
+        onOpenFavorites={() => setFavoritesOpen(true)}
+      />
 
       <FavoritesDrawer
         open={favoritesOpen}
@@ -641,35 +672,18 @@ export function ExperienceRoot() {
         className="hud-pill pointer-events-auto absolute top-4 right-4 z-30 flex h-10 items-center gap-2 px-3 text-[10px] font-semibold tracking-[0.1em] uppercase sm:top-6 sm:right-6"
       >
         <RefreshCw className="h-3.5 w-3.5" />
-        Nova arvore
+        Nova árvore
       </button>
 
-      {!isMobile && activeQuote && !panelOpen && (
+      {isMobile && !panelOpen ? (
         <button
           type="button"
-          onClick={() => setPanelOpen(true)}
-          className="hud-pill pointer-events-auto absolute right-6 bottom-6 z-30 h-10 px-4 text-sm font-medium transition"
-        >
-          Abrir frase em destaque
-        </button>
-      )}
-
-      {isMobile && !panelOpen && (
-        <button
-          type="button"
-          onClick={() => {
-            if (activeQuote) {
-              setPanelOpen(true);
-              return;
-            }
-
-            void handleRandomQuote();
-          }}
+          onClick={requestRandomLeaf}
           className="hud-pill pointer-events-auto fixed right-4 bottom-5 z-30 h-11 px-4 text-[11px] font-semibold tracking-[0.1em] uppercase"
         >
-          {activeQuote ? "Abrir frase" : primaryActionLabel}
+          {primaryActionLabel}
         </button>
-      )}
+      ) : null}
     </main>
   );
 }

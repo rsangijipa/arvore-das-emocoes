@@ -1,6 +1,6 @@
-# Arvore da Presenca
+# Árvore das Emoções
 
-Aplicacao Next.js com experiencia 3D contemplativa, frases por tema, favoritos e telemetria de interacao.
+Experiência 3D contemplativa em Next.js: uma árvore gerada do zero a cada visita, com dez folhas que carregam mensagens de acolhimento.
 
 ## Executar localmente
 
@@ -15,7 +15,7 @@ npm run dev
 - Cache de `/api/quotes/*` com estrategia stale-while-revalidate para abrir rapido na segunda visita e manter funcionamento offline.
 - Backend com Firestore para leitura da colecao `quotes` (com fallback local se Firebase nao estiver configurado).
 - Colecao `user_interactions` para mapear tema/acao/quote com timestamp.
-- Autenticacao anonima (`signInAnonymously`) para atrelar favoritos ao UID do dispositivo.
+- Autenticação anônima (`signInAnonymously`); o UID vai no `Authorization: Bearer <ID token>` e o servidor valida com `verifyIdToken` — o dono das favoritas é sempre o UID do token, nunca um id enviado pelo cliente.
 - Favoritos persistidos em nuvem na colecao `user_favorites` e espelhados localmente para resiliencia offline.
 
 ## Variaveis de ambiente
