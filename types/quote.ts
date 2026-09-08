@@ -38,7 +38,7 @@ export type ThemeOption = {
 };
 
 /** acoes de telemetria aceitas pela API — usada como allowlist no servidor */
-export const INTERACTION_ACTIONS = ["click", "favorite", "random", "theme_filter"] as const;
+export const INTERACTION_ACTIONS = ["click", "favorite", "random", "theme_filter", "session_started", "emotion_checkin_started", "emotion_selected", "intensity_selected", "leaf_opened", "regulation_started", "regulation_completed", "regulation_abandoned", "emotion_checkout", "session_completed"] as const;
 
 export type InteractionAction = (typeof INTERACTION_ACTIONS)[number];
 
@@ -47,6 +47,10 @@ export type InteractionPayload = {
   actionType: InteractionAction;
   quoteId?: string;
   theme?: ThemeFilter;
+  emotion?: string;
+  intensity?: number;
+  activityType?: string;
+  durationMs?: number;
 };
 
 export type FavoritePayload = {

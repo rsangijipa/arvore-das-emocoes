@@ -181,6 +181,10 @@ export async function registerInteractions(payloads: InteractionPayload[]): Prom
             actionType: payload.actionType,
             quoteId: payload.quoteId ?? null,
             theme: payload.theme ?? "all",
+            emotion: payload.emotion ?? null,
+            intensity: payload.intensity ?? null,
+            activityType: payload.activityType ?? null,
+            durationMs: payload.durationMs ?? null,
             createdAt: new Date().toISOString(),
           });
         }

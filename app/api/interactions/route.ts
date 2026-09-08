@@ -68,6 +68,10 @@ export async function POST(request: Request) {
     ) {
       return NextResponse.json({ error: "quoteId invalido" }, { status: 400 });
     }
+    if (candidate.emotion !== undefined && (typeof candidate.emotion !== "string" || candidate.emotion.length > 32)) return NextResponse.json({ error: "emotion invalida" }, { status: 400 });
+    if (candidate.intensity !== undefined && (typeof candidate.intensity !== "number" || !Number.isInteger(candidate.intensity) || candidate.intensity < 1 || candidate.intensity > 5)) return NextResponse.json({ error: "intensity invalida" }, { status: 400 });
+    if (candidate.activityType !== undefined && (typeof candidate.activityType !== "string" || candidate.activityType.length > 32)) return NextResponse.json({ error: "activityType invalido" }, { status: 400 });
+    if (candidate.durationMs !== undefined && (typeof candidate.durationMs !== "number" || !Number.isInteger(candidate.durationMs) || candidate.durationMs < 0 || candidate.durationMs > 3600000)) return NextResponse.json({ error: "durationMs invalido" }, { status: 400 });
 
     const sessionId =
       uid === "unverified"
@@ -85,6 +89,10 @@ export async function POST(request: Request) {
       actionType: candidate.actionType,
       quoteId: candidate.quoteId as string | undefined,
       theme: candidate.theme as ThemeFilter | undefined,
+      emotion: candidate.emotion as string | undefined,
+      intensity: candidate.intensity as number | undefined,
+      activityType: candidate.activityType as string | undefined,
+      durationMs: candidate.durationMs as number | undefined,
     });
   }
 

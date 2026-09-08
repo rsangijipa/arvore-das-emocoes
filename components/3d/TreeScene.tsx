@@ -11,7 +11,7 @@ import { Foliage } from "@/components/3d/Foliage";
 import { Panorama } from "@/components/3d/Panorama";
 import { TreeBark } from "@/components/3d/TreeBark";
 import { WindParticles } from "@/components/3d/WindParticles";
-import { GRASS_FAR_COLOR, GRASS_NEAR_COLOR, HORIZON_COLOR } from "@/lib/theme/panorama";
+import { GRASS_FAR_COLOR, GRASS_NEAR_COLOR } from "@/lib/theme/panorama";
 import {
   MESSAGE_LEAF_COUNT,
   SCENE_QUALITY_CONFIGS,
@@ -21,12 +21,15 @@ import {
 import { type SceneVariant, SCENE_VARIANT_TOKENS } from "@/lib/theme/scene-variant";
 import { generateTree } from "@/lib/tree/generateTree";
 import type { QualityConfig, QualityProfile } from "@/types/performance";
+import type { EmotionalSceneProfile, SensoryMode } from "@/types/emotional-session";
 
 export type TreeSceneProps = {
   seed: number;
   qualityProfile: QualityProfile;
   isMobile: boolean;
   reduceMotion: boolean;
+  sensoryMode: SensoryMode;
+  emotionalProfile: EmotionalSceneProfile;
   introActive: boolean;
   /** o painel de mensagem esta aberto; quando vira false a folha volta */
   messageOpen: boolean;
@@ -42,6 +45,8 @@ export type TreeSceneProps = {
   onLeafReleased: () => void;
   onHoverChange: (hovering: boolean) => void;
   onSceneReady: () => void;
+  onContextLost: () => void;
+  onContextRestored: () => void;
 };
 
 export type TreeSceneApi = {
@@ -236,6 +241,8 @@ function SceneContent({
   seed,
   isMobile,
   reduceMotion,
+  sensoryMode,
+  emotionalProfile,
   introActive,
   messageOpen,
   quoteMappingKey,
@@ -247,11 +254,15 @@ function SceneContent({
   onLeafReleased,
   onHoverChange,
   onSceneReady,
+  onContextLost,
+  onContextRestored,
 }: {
   quality: QualityConfig;
   seed: number;
   isMobile: boolean;
   reduceMotion: boolean;
+  sensoryMode: SensoryMode;
+  emotionalProfile: EmotionalSceneProfile;
   introActive: boolean;
   messageOpen: boolean;
   quoteMappingKey: string;
@@ -263,8 +274,10 @@ function SceneContent({
   onLeafReleased: () => void;
   onHoverChange: (hovering: boolean) => void;
   onSceneReady: () => void;
+  onContextLost: () => void;
+  onContextRestored: () => void;
 }) {
-  const { camera } = useThree();
+  const { camera, gl } = useThree();
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
   const sunRef = useRef<THREE.DirectionalLight | null>(null);
   const sunScratch = useMemo(() => new THREE.Vector3(), []);
@@ -279,6 +292,17 @@ function SceneContent({
   const introProgressRef = useRef(0);
   const introSeedRef = useRef(seed);
   const readyRef = useRef(false);
+
+  useEffect(() => {
+    const canvas = gl.domElement;
+    const onLost = (event: Event) => { event.preventDefault(); onContextLost(); };
+    canvas.addEventListener("webglcontextlost", onLost, false);
+    canvas.addEventListener("webglcontextrestored", onContextRestored, false);
+    return () => {
+      canvas.removeEventListener("webglcontextlost", onLost, false);
+      canvas.removeEventListener("webglcontextrestored", onContextRestored, false);
+    };
+  }, [gl, onContextLost, onContextRestored]);
 
   const tree = useMemo(
     () =>
@@ -435,8 +459,8 @@ function SceneContent({
       <Panorama resolution={quality.profile === "safe" ? 1024 : 2048} sceneVariant={sceneVariant} />
       <fog attach="fog" args={[tokens.fogColor, framing.distance * 1.4, framing.distance * 5 * tokens.fogDensityMultiplier]} />
 
-      <hemisphereLight intensity={1.15} color={tokens.skyColor} groundColor={tokens.groundColor} />
-      <ambientLight intensity={tokens.ambientIntensity} color={tokens.ambientColor} />
+      <hemisphereLight intensity={1.15 * emotionalProfile.ambientLight} color={tokens.skyColor} groundColor={tokens.groundColor} />
+      <ambientLight intensity={tokens.ambientIntensity * emotionalProfile.ambientLight} color={tokens.ambientColor} />
 
       <directionalLight
         ref={sunRef}
@@ -464,7 +488,7 @@ function SceneContent({
           leaves={tree.leaves}
           messageLeaves={tree.messageLeaves}
           detail={quality.detail}
-          windStrength={quality.windStrength}
+          windStrength={quality.windStrength * emotionalProfile.wind * (sensoryMode === "minimal" ? 0 : sensoryMode === "calm" ? 0.45 : 1)}
           reduceMotion={reduceMotion}
           castShadow={quality.shadows}
           leafEmissiveBoost={tokens.leafEmissiveBoost}
@@ -488,7 +512,7 @@ function SceneContent({
       />
 
       <WindParticles
-        count={quality.windParticles}
+        count={sensoryMode === "minimal" ? 0 : Math.round(quality.windParticles * emotionalProfile.particleIntensity * (sensoryMode === "calm" ? 0.3 : 1))}
         seed={seed}
         reduceMotion={reduceMotion}
         dimmed={messageOpen || introActive}
@@ -543,6 +567,8 @@ export default function TreeScene(props: TreeSceneProps) {
           seed={props.seed}
           isMobile={props.isMobile}
           reduceMotion={props.reduceMotion}
+          sensoryMode={props.sensoryMode}
+          emotionalProfile={props.emotionalProfile}
           introActive={props.introActive}
           messageOpen={props.messageOpen}
           quoteMappingKey={props.quoteMappingKey}
@@ -554,6 +580,8 @@ export default function TreeScene(props: TreeSceneProps) {
           onLeafReleased={props.onLeafReleased}
           onHoverChange={props.onHoverChange}
           onSceneReady={props.onSceneReady}
+          onContextLost={props.onContextLost}
+          onContextRestored={props.onContextRestored}
         />
       </Suspense>
     </Canvas>

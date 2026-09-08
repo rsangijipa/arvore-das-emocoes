@@ -6,6 +6,8 @@ import { ChevronRight, Heart, RefreshCw, SlidersHorizontal, Sparkles, Volume2, V
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { FavoritesDrawer } from "@/components/ui/FavoritesDrawer";
+import { EmotionalCheckIn } from "@/components/experience/EmotionalCheckIn";
+import { BreathingLeaf } from "@/components/experience/BreathingLeaf";
 import { LeafMessageCard } from "@/components/ui/LeafMessageCard";
 import { ThemeFilter } from "@/components/ui/ThemeFilter";
 import { themeLabel } from "@/data/labels";
@@ -13,6 +15,7 @@ import { THEMES } from "@/data/themes";
 import { usePerformanceMode } from "@/hooks/usePerformanceMode";
 import { useReducedMotionPreference } from "@/hooks/useReducedMotionPreference";
 import { useSessionId } from "@/hooks/useSessionId";
+import { useEmotionalSession } from "@/hooks/useEmotionalSession";
 import { useSoundscape } from "@/hooks/useSoundscape";
 import { fetchFavorites, postFavorite, postInteraction } from "@/lib/client/interactions-api";
 import { fetchQuotesByTheme } from "@/lib/client/quote-api";
@@ -24,6 +27,7 @@ import type { TreeSceneApi } from "@/components/3d/TreeScene";
 import { useQuoteStore } from "@/store/useQuoteStore";
 import type { QualityProfile } from "@/types/performance";
 import type { Quote } from "@/types/quote";
+import { getEmotionalSceneProfile, type Emotion, type SensoryMode } from "@/types/emotional-session";
 
 const TreeScene = dynamic(() => import("@/components/3d/TreeScene"), {
   ssr: false,
@@ -59,6 +63,7 @@ function buildLeafQuoteMap(quotes: Quote[], seed: number, slots: number): (Quote
 
 export function ExperienceRoot() {
   const sessionId = useSessionId();
+  const emotionalSession = useEmotionalSession(sessionId);
   const { profile, setProfile } = usePerformanceMode();
   const reduceMotion = useReducedMotionPreference();
 
@@ -80,6 +85,11 @@ export function ExperienceRoot() {
   const tooltipShownRef = useRef(false);
   /** quantas folhas foram lidas nesta sessão de árvore */
   const [readLeafCount, setReadLeafCount] = useState(0);
+  const [checkInOpen, setCheckInOpen] = useState(false);
+  const [checkOutOpen, setCheckOutOpen] = useState(false);
+  const [sensoryMode, setSensoryMode] = useState<SensoryMode>("default");
+  const [webglUnavailable, setWebglUnavailable] = useState(false);
+  const [breathingOpen, setBreathingOpen] = useState(false);
 
   // a árvore é sorteada a cada abertura (nunca durante o render do servidor)
   const [treeSeed, setTreeSeed] = useState<number | null>(null);
@@ -115,6 +125,19 @@ export function ExperienceRoot() {
     setTreeSeed(createTreeSeed());
     setShowIntro(window.localStorage.getItem(INTRO_STORAGE_KEY) !== "1");
   }, []);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem("arvore-sensory-mode");
+    if (saved === "calm" || saved === "minimal") setSensoryMode(saved);
+  }, []);
+
+  useEffect(() => {
+    window.localStorage.setItem("arvore-sensory-mode", sensoryMode);
+  }, [sensoryMode]);
+
+  useEffect(() => {
+    if (sceneReady && !loadingQuotes && !emotionalSession.session.emotionBefore) setCheckInOpen(true);
+  }, [emotionalSession.session.emotionBefore, loadingQuotes, sceneReady]);
 
   useEffect(() => {
     return () => {
@@ -346,6 +369,16 @@ export function ExperienceRoot() {
     setReadLeafCount((n) => n + 1);
   }, []);
 
+  const completeCheckIn = useCallback((emotion: Emotion, intensity: number) => {
+    emotionalSession.checkIn(emotion, intensity);
+    setCheckInOpen(false);
+  }, [emotionalSession]);
+
+  const completeCheckOut = useCallback((emotion: Emotion, intensity: number) => {
+    emotionalSession.checkOut(emotion, intensity);
+    setCheckOutOpen(false);
+  }, [emotionalSession]);
+
   const handleFavorite = useCallback(() => {
     if (!activeQuote || !sessionId) {
       return;
@@ -469,6 +502,8 @@ export function ExperienceRoot() {
   }, [setActiveQuote, setPanelOpen]);
 
   const loadingOverlayVisible = loadingQuotes || !sceneReady || treeSeed === null;
+  const completedActivities = emotionalSession.session.activities.filter((activity) => activity.completed).length;
+  const emotionalProfile = getEmotionalSceneProfile(emotionalSession.session.emotionBefore, emotionalSession.session.intensityBefore, completedActivities);
 
   return (
     <main
@@ -510,6 +545,8 @@ export function ExperienceRoot() {
             qualityProfile={qualityProfile}
             isMobile={isMobile}
             reduceMotion={reduceMotion}
+            sensoryMode={sensoryMode}
+            emotionalProfile={emotionalProfile}
             introActive={introLocked}
             messageOpen={panelOpen}
             quoteMappingKey={themeFilter}
@@ -521,6 +558,8 @@ export function ExperienceRoot() {
             onLeafReleased={handleLeafReleased}
             onHoverChange={handleHoverChange}
             onSceneReady={() => setSceneReady(true)}
+            onContextLost={() => setWebglUnavailable(true)}
+            onContextRestored={() => setWebglUnavailable(false)}
           />
         ) : null}
       </div>
@@ -880,6 +919,11 @@ export function ExperienceRoot() {
         onOpenFavorites={() => setFavoritesOpen(true)}
       />
 
+      <EmotionalCheckIn open={checkInOpen} title="Como você está chegando aqui hoje?" onComplete={completeCheckIn} onSkip={() => setCheckInOpen(false)} />
+      <EmotionalCheckIn open={checkOutOpen} title="Como você está agora?" onComplete={completeCheckOut} onSkip={() => setCheckOutOpen(false)} />
+      <BreathingLeaf open={breathingOpen} reduceMotion={reduceMotion} onStart={() => emotionalSession.startActivity("breathing")} onComplete={(durationMs) => emotionalSession.addActivity({ type: "breathing", durationMs, completed: true })} onClose={() => setBreathingOpen(false)} />
+      {webglUnavailable ? <div role="alert" className="hud-panel fixed inset-x-4 top-4 z-[60] mx-auto max-w-md p-4 text-center"><p className="text-sm text-[#E7EEF7]">A floresta precisa de um instante para voltar.</p><button type="button" onClick={() => window.location.reload()} className="hud-btn-primary mt-3 px-4 text-sm font-semibold">Recarregar experiência</button></div> : null}
+
       <FavoritesDrawer
         open={favoritesOpen}
         quotes={favoriteQuotes}
@@ -899,6 +943,8 @@ export function ExperienceRoot() {
           <span className="hidden sm:inline">Nova árvore</span>
         </button>
       ) : null}
+
+      {!panelOpen && !loadingOverlayVisible ? <div className="absolute right-4 bottom-[max(5.5rem,env(safe-area-inset-bottom))] z-30 flex flex-col items-end gap-2 sm:right-6 sm:bottom-6"><button type="button" onClick={() => setBreathingOpen(true)} className="hud-pill h-11 px-4 text-[11px] font-semibold text-[#D6E2F0]">Respirar com a folha</button><button type="button" onClick={() => setCheckOutOpen(true)} className="hud-pill h-11 px-4 text-[11px] font-semibold text-[#D6E2F0]">Como estou agora?</button><label className="hud-pill flex h-10 items-center gap-2 px-3 text-[10px] text-[#D6E2F0]">Sensações<select value={sensoryMode} onChange={(event) => setSensoryMode(event.target.value as SensoryMode)} aria-label="Modo sensorial" className="bg-transparent text-[11px] text-white outline-none"><option value="default">Completo</option><option value="calm">Calmo</option><option value="minimal">Mínimo</option></select></label></div> : null}
 
       {/*
         FAB de ação principal em mobile: posicionado no centro-inferior,
