@@ -21,7 +21,7 @@ import { useSoundscape } from "@/hooks/useSoundscape";
 import { postFavorite, postInteraction } from "@/lib/client/interactions-api";
 import { fetchQuotesByTheme } from "@/lib/client/quote-api";
 import { createTreeSeed, MESSAGE_LEAF_COUNT } from "@/lib/theme/scene-tokens";
-import { getSceneVariant, type SceneVariant } from "@/lib/theme/scene-variant";
+import type { SceneVariant } from "@/lib/theme/scene-variant";
 import { saveFavorites } from "@/lib/utils/local-favorites";
 import { INTRO_STORAGE_KEY, migrateLegacyStorage } from "@/lib/utils/storage";
 import type { TreeSceneApi } from "@/components/3d/TreeScene";
@@ -78,8 +78,8 @@ export function ExperienceRoot() {
   const [favoritesOpen, setFavoritesOpen] = useState(false);
   const [favoriteFeedback, setFavoriteFeedback] = useState<string | null>(null);
   const [hudExpanded, setHudExpanded] = useState(false);
-  /** variante sazonal calculada uma vez no bootstrap */
-  const [sceneVariant] = useState<SceneVariant>(() => getSceneVariant());
+  /** ambiente visual: sempre abre em "morning"; o usuário troca pela top bar (Tarefa 3) */
+  const [sceneVariant] = useState<SceneVariant>("morning");
   /** true enquanto a folha animada ainda não voltou à copa após fechar o painel */
   const [isLeafReturning, setIsLeafReturning] = useState(false);
   /** tooltip "Toque para abrir" — mostrado uma única vez no primeiro hover */

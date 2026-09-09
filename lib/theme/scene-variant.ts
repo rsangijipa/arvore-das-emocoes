@@ -1,19 +1,12 @@
 /**
- * Variação sazonal/horária da cena.
+ * Variação visual da cena (período do dia).
  *
- * A hora local do dispositivo determina uma das quatro variantes visuais.
- * O valor é calculado uma única vez no bootstrap e nunca reatualiza em
- * runtime (a árvore não precisa mudar enquanto o usuário está na tela).
+ * O usuário escolhe a variante manualmente pela top bar (Sol/Tarde/Noite). A
+ * árvore sempre abre em "morning" — variante fixa de bootstrap, sem botão
+ * próprio no seletor — até o usuário trocar.
  */
 
 export type SceneVariant = "morning" | "day" | "evening" | "night";
-
-export function getSceneVariant(hour = new Date().getHours()): SceneVariant {
-  if (hour >= 6 && hour < 10) return "morning";
-  if (hour >= 10 && hour < 17) return "day";
-  if (hour >= 17 && hour < 20) return "evening";
-  return "night";
-}
 
 /** Tokens visuais por variante */
 export type SceneVariantTokens = {
