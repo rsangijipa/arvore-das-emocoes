@@ -16,12 +16,13 @@ import { usePerformanceMode } from "@/hooks/usePerformanceMode";
 import { useReducedMotionPreference } from "@/hooks/useReducedMotionPreference";
 import { useSessionId } from "@/hooks/useSessionId";
 import { useEmotionalSession } from "@/hooks/useEmotionalSession";
+import { useFavoritesSync } from "@/hooks/useFavoritesSync";
 import { useSoundscape } from "@/hooks/useSoundscape";
-import { fetchFavorites, postFavorite, postInteraction } from "@/lib/client/interactions-api";
+import { postFavorite, postInteraction } from "@/lib/client/interactions-api";
 import { fetchQuotesByTheme } from "@/lib/client/quote-api";
 import { createTreeSeed, MESSAGE_LEAF_COUNT } from "@/lib/theme/scene-tokens";
 import { getSceneVariant, type SceneVariant } from "@/lib/theme/scene-variant";
-import { loadFavorites, mergeFavoriteIds, saveFavorites } from "@/lib/utils/local-favorites";
+import { saveFavorites } from "@/lib/utils/local-favorites";
 import { INTRO_STORAGE_KEY, migrateLegacyStorage } from "@/lib/utils/storage";
 import type { TreeSceneApi } from "@/components/3d/TreeScene";
 import { useQuoteStore } from "@/store/useQuoteStore";
@@ -64,6 +65,7 @@ function buildLeafQuoteMap(quotes: Quote[], seed: number, slots: number): (Quote
 export function ExperienceRoot() {
   const sessionId = useSessionId();
   const emotionalSession = useEmotionalSession(sessionId);
+  useFavoritesSync(sessionId);
   const { profile, setProfile } = usePerformanceMode();
   const reduceMotion = useReducedMotionPreference();
 
@@ -110,12 +112,10 @@ export function ExperienceRoot() {
   const favorites = useQuoteStore((state) => state.favorites);
   const panelOpen = useQuoteStore((state) => state.panelOpen);
   const qualityProfile = useQuoteStore((state) => state.qualityProfile);
-  const setSessionId = useQuoteStore((state) => state.setSessionId);
   const setQuotes = useQuoteStore((state) => state.setQuotes);
   const setActiveQuote = useQuoteStore((state) => state.setActiveQuote);
   const setThemeFilter = useQuoteStore((state) => state.setThemeFilter);
   const toggleFavorite = useQuoteStore((state) => state.toggleFavorite);
-  const setFavorites = useQuoteStore((state) => state.setFavorites);
   const setPanelOpen = useQuoteStore((state) => state.setPanelOpen);
   const setQualityProfile = useQuoteStore((state) => state.setQualityProfile);
 
@@ -181,45 +181,6 @@ export function ExperienceRoot() {
 
     return () => window.clearTimeout(timeout);
   }, [introLocked]);
-
-  useEffect(() => {
-    if (!sessionId) {
-      return;
-    }
-
-    setSessionId(sessionId);
-    setFavorites(loadFavorites(sessionId));
-  }, [sessionId, setFavorites, setSessionId]);
-
-  useEffect(() => {
-    if (!sessionId) {
-      return;
-    }
-
-    let cancelled = false;
-    const localFavorites = loadFavorites(sessionId);
-
-    void fetchFavorites(sessionId)
-      .then((cloudFavorites) => {
-        if (cancelled) {
-          return;
-        }
-
-        const mergedFavorites = mergeFavoriteIds(localFavorites, cloudFavorites);
-        setFavorites(mergedFavorites);
-        saveFavorites(sessionId, mergedFavorites);
-
-        const missingInCloud = mergedFavorites.filter((quoteId) => !cloudFavorites.includes(quoteId));
-        for (const quoteId of missingInCloud) {
-          void postFavorite({ sessionId, quoteId, isFavorite: true });
-        }
-      })
-      .catch(() => undefined);
-
-    return () => {
-      cancelled = true;
-    };
-  }, [sessionId, setFavorites]);
 
   const loadAllQuotes = useCallback(async () => {
     setLoadingQuotes(true);
