@@ -102,6 +102,10 @@ export function applyBarkTriplanarToShader(
   Object.assign(shader.uniforms, uniforms);
 
   // vertex: expor vWorldPosition e vNormalW (normal geometrica em espaco mundo)
+  // Nao usa `#include <worldpos_vertex>`: esse chunk so declara a variavel
+  // `worldPosition` quando USE_ENVMAP/USE_SHADOWMAP/etc estao definidos, o que
+  // falha ao compilar em variantes sem essas flags. `project_vertex` sempre
+  // existe e roda depois de `transformed`/`objectNormal` prontos.
   shader.vertexShader = shader.vertexShader
     .replace(
       "#include <common>",
@@ -110,10 +114,10 @@ export function applyBarkTriplanarToShader(
       varying vec3 vNormalW;`,
     )
     .replace(
-      "#include <worldpos_vertex>",
-      `#include <worldpos_vertex>
-      vWorldPosition = worldPosition.xyz;
-      vNormalW = normalize(mat3(modelMatrix) * objectNormal);`,
+      "#include <project_vertex>",
+      `vWorldPosition = (modelMatrix * vec4(transformed, 1.0)).xyz;
+      vNormalW = normalize(mat3(modelMatrix) * objectNormal);
+      #include <project_vertex>`,
     );
 
   // fragment: declarar varyings + funcoes de ruido/triplanar

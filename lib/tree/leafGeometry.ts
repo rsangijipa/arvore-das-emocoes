@@ -140,9 +140,13 @@ export function createLeafGeometry(options: LeafGeometryOptions): THREE.BufferGe
   return geometry;
 }
 
+/** quantidade de variantes de folha comum (indices 0..COMMON_LEAF_VARIANTS-1) */
+export const COMMON_LEAF_VARIANTS = 5;
+
 /**
- * Variantes usadas na copa. Indices 0-2 sao folhas comuns; o indice 3 e a folha
- * que carrega mensagem (mais larga e mais definida).
+ * Variantes usadas na copa. Indices 0-4 sao folhas comuns (larga, estreita,
+ * jovem/pequena, curvada, madura/assimetrica); o ultimo indice e a folha que
+ * carrega mensagem (mais larga e mais definida).
  */
 export function createLeafVariants(detail: number): THREE.BufferGeometry[] {
   const segU = Math.max(3, Math.round(5 * detail));
@@ -152,6 +156,7 @@ export function createLeafVariants(detail: number): THREE.BufferGeometry[] {
   // vertexColors, e uma geometria sem esse atributo faz o WebGL entregar (0,0,0)
   // -> a copa inteira renderiza preta.
   return [
+    // 0: larga
     createLeafGeometry({
       length: 0.3,
       width: 0.155,
@@ -164,6 +169,7 @@ export function createLeafVariants(detail: number): THREE.BufferGeometry[] {
       waves: 0.035,
       veinStrength: 0.22,
     }),
+    // 1: estreita
     createLeafGeometry({
       length: 0.36,
       width: 0.138,
@@ -176,9 +182,10 @@ export function createLeafVariants(detail: number): THREE.BufferGeometry[] {
       waves: 0.048,
       veinStrength: 0.24,
     }),
+    // 2: jovem/pequena, quase reta
     createLeafGeometry({
-      length: 0.26,
-      width: 0.172,
+      length: 0.22,
+      width: 0.16,
       segmentsU: segU + 1,
       segmentsV: segV,
       cup: 0.022,
@@ -187,6 +194,32 @@ export function createLeafVariants(detail: number): THREE.BufferGeometry[] {
       droop: 0.028,
       waves: 0.06,
       veinStrength: 0.2,
+    }),
+    // 3: curvada/torcida, borda ondulada
+    createLeafGeometry({
+      length: 0.32,
+      width: 0.15,
+      segmentsU: segU,
+      segmentsV: segV + 1,
+      cup: 0.018,
+      midrib: 0.013,
+      twist: 0.74,
+      droop: 0.07,
+      waves: 0.09,
+      veinStrength: 0.26,
+    }),
+    // 4: madura, assimetrica e mais pesada (droop acentuado)
+    createLeafGeometry({
+      length: 0.34,
+      width: 0.178,
+      segmentsU: segU + 1,
+      segmentsV: segV + 1,
+      cup: 0.04,
+      midrib: 0.02,
+      twist: 0.44,
+      droop: 0.09,
+      waves: 0.05,
+      veinStrength: 0.3,
     }),
     // folha-mensagem: mais tesselada porque cresce e fica em close
     createLeafGeometry({

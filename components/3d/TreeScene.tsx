@@ -6,10 +6,12 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import * as THREE from "three";
 
+import { Birds } from "@/components/3d/Birds";
 import { FlyingLeaf, type FlyingLeafPhase } from "@/components/3d/FlyingLeaf";
 import { Foliage } from "@/components/3d/Foliage";
 import { GrassField } from "@/components/3d/GrassField";
 import { Panorama } from "@/components/3d/Panorama";
+import { Scenery } from "@/components/3d/Scenery";
 import { TreeBark } from "@/components/3d/TreeBark";
 import { WindParticles } from "@/components/3d/WindParticles";
 import { GRASS_FAR_COLOR, GRASS_NEAR_COLOR } from "@/lib/theme/panorama";
@@ -300,6 +302,57 @@ function createGroundTexture(): THREE.CanvasTexture | null {
   return texture;
 }
 
+/** disco irregular (fan a partir do centro, raio perturbado por harmonicos) */
+function buildIrregularDiscGeometry(baseRadius: number, segments: number, jitter: number, seedPhase: number) {
+  const positions: number[] = [0, 0, 0];
+  const colors: number[] = [];
+  const indices: number[] = [];
+  const dirtCenter = new THREE.Color("#5C5136");
+  const dirtEdge = new THREE.Color("#4A5A2E");
+
+  colors.push(dirtCenter.r, dirtCenter.g, dirtCenter.b);
+
+  for (let i = 0; i <= segments; i += 1) {
+    const angle = (i / segments) * Math.PI * 2;
+    const wobble =
+      Math.sin(angle * 3 + seedPhase) * 0.5 + Math.sin(angle * 5 - seedPhase * 1.7) * 0.3 + Math.sin(angle * 8 + seedPhase * 2.3) * 0.2;
+    const r = baseRadius * (1 + wobble * jitter);
+    positions.push(Math.cos(angle) * r, Math.sin(angle) * r, 0);
+    colors.push(dirtEdge.r, dirtEdge.g, dirtEdge.b);
+    if (i > 0) {
+      indices.push(0, i, i + 1);
+    }
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  geometry.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+/** textura de mistura terra->musgo->grama: alpha alto no centro, some nas bordas */
+function createRootContactTexture() {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+
+  const gradient = context.createRadialGradient(size / 2, size / 2, size * 0.14, size / 2, size / 2, size / 2);
+  gradient.addColorStop(0, "rgba(74,90,46,0.55)");
+  gradient.addColorStop(0.55, "rgba(80,110,50,0.32)");
+  gradient.addColorStop(1, "rgba(80,110,50,0)");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, size, size);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 function Ground({
   receiveShadow,
   crownRadius,
@@ -308,34 +361,92 @@ function Ground({
   crownRadius: number;
 }) {
   const [groundTexture] = useState(() => createGroundTexture());
+  const [rootContactTexture] = useState(() => createRootContactTexture());
 
+  const dirtGeometry = useMemo(() => buildIrregularDiscGeometry(0.85, 40, 0.22, 1.7), []);
+
+  /**
+   * Terreno com multiplos aneis concentricos (CircleGeometry padrao so tem
+   * centro + 1 borda, sem subdivisao radial — nao da pra relevar isso).
+   * Fica perfeitamente plano ate `flatRadius` (onde grama, pedras e a mancha
+   * de raizes ja estao posicionadas em y=0) e ondula suavemente so no terreno
+   * distante, puramente estetico.
+   */
   const geometry = useMemo(() => {
-    const circle = new THREE.CircleGeometry(48, 96);
-    const position = circle.attributes.position;
-    const colors = new Float32Array(position.count * 3);
-    const near = new THREE.Color(GRASS_NEAR_COLOR);
-    const far  = new THREE.Color(GRASS_FAR_COLOR);
-    const color = new THREE.Color();
+    const outerRadius = 48;
+    const rings = 28;
+    const segments = 96;
+    const flatRadius = 13;
+    const rampDistance = 9;
+    const maxHeight = 0.14;
 
-    for (let index = 0; index < position.count; index += 1) {
-      const distance = Math.hypot(position.getX(index), position.getY(index));
-      const t = THREE.MathUtils.clamp(distance / 48, 0, 1);
+    const positions: number[] = [0, 0, 0];
+    const colors: number[] = [];
+    const uvs: number[] = [0.5, 0.5];
+    const near = new THREE.Color(GRASS_NEAR_COLOR);
+    const far = new THREE.Color(GRASS_FAR_COLOR);
+    const color = new THREE.Color();
+    color.copy(near);
+    colors.push(color.r, color.g, color.b);
+
+    for (let ring = 1; ring <= rings; ring += 1) {
+      const radius = (ring / rings) * outerRadius;
+      const t = THREE.MathUtils.clamp(radius / outerRadius, 0, 1);
       color.copy(near).lerp(far, Math.pow(t, 0.5));
-      colors[index * 3]     = color.r;
-      colors[index * 3 + 1] = color.g;
-      colors[index * 3 + 2] = color.b;
+
+      const relief = THREE.MathUtils.smoothstep(radius, flatRadius, flatRadius + rampDistance);
+
+      for (let j = 0; j < segments; j += 1) {
+        const angle = (j / segments) * Math.PI * 2;
+        const x = Math.cos(angle) * radius;
+        const y = Math.sin(angle) * radius;
+        const noise =
+          Math.sin(x * 0.16 + y * 0.07) * 0.55 + Math.sin(x * 0.05 - y * 0.19 + 2.1) * 0.45;
+        const height = noise * maxHeight * relief;
+
+        positions.push(x, y, height);
+        colors.push(color.r, color.g, color.b);
+        uvs.push(x / outerRadius / 2 + 0.5, y / outerRadius / 2 + 0.5);
+      }
     }
 
-    circle.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-    return circle;
+    const indices: number[] = [];
+    // centro -> primeiro anel
+    for (let j = 0; j < segments; j += 1) {
+      const a = 1 + j;
+      const b = 1 + ((j + 1) % segments);
+      indices.push(0, a, b);
+    }
+    // anel a anel
+    for (let ring = 1; ring < rings; ring += 1) {
+      const ringStart = 1 + (ring - 1) * segments;
+      const nextStart = 1 + ring * segments;
+      for (let j = 0; j < segments; j += 1) {
+        const a = ringStart + j;
+        const b = ringStart + ((j + 1) % segments);
+        const c = nextStart + ((j + 1) % segments);
+        const d = nextStart + j;
+        indices.push(a, b, c, a, c, d);
+      }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute("color", new THREE.Float32BufferAttribute(colors, 3));
+    geo.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    return geo;
   }, []);
 
   useEffect(() => {
     return () => {
       geometry.dispose();
       groundTexture?.dispose();
+      dirtGeometry.dispose();
+      rootContactTexture?.dispose();
     };
-  }, [geometry, groundTexture]);
+  }, [dirtGeometry, geometry, groundTexture, rootContactTexture]);
 
   const aoRadius = Math.max(2.2, crownRadius * 0.85);
 
@@ -350,11 +461,23 @@ function Ground({
         />
       </mesh>
 
-      {/* terra exposta no pé da árvore */}
-      <mesh position={[0, 0.004, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <circleGeometry args={[0.85, 48]} />
-        <meshStandardMaterial color="#5C5136" roughness={1} metalness={0} />
+      {/* terra exposta no pé da árvore: contorno irregular, nao um disco perfeito */}
+      <mesh geometry={dirtGeometry} position={[0, 0.004, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <meshStandardMaterial vertexColors roughness={1} metalness={0} />
       </mesh>
+
+      {/* transicao terra -> musgo -> grama, suavizando a costura */}
+      {rootContactTexture && (
+        <mesh position={[0, 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+          <circleGeometry args={[1.7, 48]} />
+          <meshBasicMaterial
+            map={rootContactTexture}
+            transparent
+            depthWrite={false}
+            opacity={0.85}
+          />
+        </mesh>
+      )}
 
       {/* blob AO sob a copa — presente em todos os perfis */}
       <mesh position={[0, 0.006, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -657,8 +780,6 @@ function SceneContent({
         castShadow={false}
       />
 
-      <directionalLight position={[-6, 4.5, -5]} intensity={0.6} color="#9FBEDA" />
-
       <group position={TREE_OFFSET}>
         <TreeBark
           branches={tree.branches}
@@ -702,6 +823,13 @@ function SceneContent({
         dimmed={messageOpen || introActive}
       />
 
+      <Birds
+        count={sensoryMode === "minimal" ? 0 : quality.profile === "safe" ? 2 : quality.profile === "medium" ? 3 : 4}
+        seed={seed}
+        reduceMotion={reduceMotion}
+        dimmed={messageOpen || introActive}
+      />
+
       <GrassField
         count={
           sensoryMode === "minimal"
@@ -715,6 +843,31 @@ function SceneContent({
         seed={seed}
         windStrength={quality.windStrength * emotionalProfile.wind * (sensoryMode === "minimal" ? 0 : sensoryMode === "calm" ? 0.45 : 1)}
         reduceMotion={reduceMotion}
+      />
+
+      <Scenery
+        rockCount={
+          sensoryMode === "minimal"
+            ? 0
+            : quality.profile === "safe"
+              ? 5
+              : quality.profile === "medium"
+                ? 9
+                : 14
+        }
+        bushCount={
+          sensoryMode === "minimal"
+            ? 0
+            : quality.profile === "safe"
+              ? 4
+              : quality.profile === "medium"
+                ? 7
+                : 11
+        }
+        seed={seed}
+        crownRadius={tree.crownRadius}
+        castShadow={quality.shadows}
+        receiveShadow={quality.shadows}
       />
 
       <Ground receiveShadow={quality.shadows} crownRadius={tree.crownRadius} />

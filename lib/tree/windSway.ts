@@ -21,8 +21,15 @@ export const WIND_FIELD_GLSL = /* glsl */ `
 uniform float uTime;
 uniform float uSway;
 
-vec3 windField(vec3 p) {
-  float flex = pow(clamp(p.y / 6.0, 0.0, 1.0), 1.8);
+/**
+ * flexBoost pondera o quanto ESSE ponto especifico flexiona alem do que a
+ * altura sozinha sugeriria: tronco e galhos grossos usam ~0.2 (quase rigidos),
+ * raminhos finos usam ate ~1.6 (movimento amplificado). windField() mantem o
+ * comportamento antigo (boost = 1) para quem nao tem essa informacao por
+ * vertice (folhas, grama).
+ */
+vec3 windFieldBoosted(vec3 p, float flexBoost) {
+  float flex = pow(clamp(p.y / 6.0, 0.0, 1.0), 1.8) * flexBoost;
   float phase = p.x * 0.4 + p.z * 0.55;
   float gust = 0.72 + 0.2 * sin(uTime * 0.41) + 0.08 * sin(uTime * 0.93 + 1.7);
   float s1 = sin(uTime * 1.15 + phase);
@@ -31,6 +38,10 @@ vec3 windField(vec3 p) {
   vec3 disp = dir * (s1 * 0.72 + s2 * 0.28) * flex * uSway * gust;
   disp.y -= abs(s1) * flex * uSway * 0.12;
   return disp;
+}
+
+vec3 windField(vec3 p) {
+  return windFieldBoosted(p, 1.0);
 }
 `;
 

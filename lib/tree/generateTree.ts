@@ -332,7 +332,9 @@ export function generateTree(options: GenerateTreeOptions): TreeData {
           normal,
           scale: 0.8 + random() * 0.45,
           phase: random() * Math.PI * 2,
-          variant: random() < 0.34 ? 0 : random() < 0.72 ? 1 : 2,
+          // 5 variantes comuns: larga, estreita, jovem, curvada, madura
+          // (ver COMMON_LEAF_VARIANTS em lib/tree/leafGeometry.ts)
+          variant: Math.floor(random() * 5),
           exposure: 0,
           kind: "common",
         });
@@ -633,7 +635,7 @@ function pickMessageLeaves(pool: LeafNode[], count: number, random: () => number
     kind: "message" as const,
     // folhas com mensagem sao visivelmente maiores
     scale: leaf.scale * 1.65,
-    variant: 3,
+    variant: 5,
   }));
 }
 

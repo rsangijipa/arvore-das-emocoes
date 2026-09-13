@@ -56,24 +56,27 @@ export function TreeBark({
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);
 
-      // 1) vento (vertex shader)
+      // 1) vento hierarquico (vertex shader): aFlex vem da geometria e diz o
+      // quanto ESTE vertice flexiona alem do que a altura sozinha sugeriria —
+      // tronco quase rigido, raminhos finos com movimento amplificado.
       shader.vertexShader = shader.vertexShader
         .replace(
           "#include <common>",
           `#include <common>
+          attribute float aFlex;
           ${WIND_FIELD_GLSL}`,
         )
         .replace(
           "#include <begin_vertex>",
           `#include <begin_vertex>
-          transformed += windField(transformed);`,
+          transformed += windFieldBoosted(transformed, aFlex);`,
         );
 
       // 2) microdetalhe triplanar de casca (vertex worldpos + fragment)
       applyBarkTriplanarToShader(shader, { uMicroDetail: uniforms.uMicroDetail });
     };
 
-    mat.customProgramCacheKey = () => "tree-bark-wind-triplanar-v1";
+    mat.customProgramCacheKey = () => "tree-bark-wind-triplanar-v2";
     return mat;
   }, [uniforms]);
 

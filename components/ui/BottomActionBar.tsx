@@ -3,6 +3,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import {
   Check,
+  ChevronDown,
   Heart,
   HeartPulse,
   Moon,
@@ -85,6 +86,7 @@ export function BottomActionBar({
   onToggleMute,
 }: BottomActionBarProps) {
   const [menu, setMenu] = useState<MenuId | null>(null);
+  const [collapsed, setCollapsed] = useState(true);
   const wrapRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -113,6 +115,11 @@ export function BottomActionBar({
 
   const toggleMenu = (next: MenuId) => {
     setMenu((current) => (current === next ? null : next));
+  };
+
+  const collapseBar = () => {
+    setMenu(null);
+    setCollapsed(true);
   };
 
   return (
@@ -273,90 +280,125 @@ export function BottomActionBar({
             ) : null}
           </AnimatePresence>
 
-          <div className="hud-panel flex items-center gap-1 rounded-full py-2 pl-2 pr-2.5">
-            <motion.button
-              {...TAP_BUTTON}
-              type="button"
-              onClick={onPrimary}
-              className="flex h-11 shrink-0 items-center gap-2 rounded-full bg-[#F2EFE8] pl-3.5 pr-4 text-[11.5px] font-bold tracking-[0.04em] text-[#1C1A17] hover:bg-white"
-            >
-              <Sparkles className="h-4 w-4" aria-hidden />
-              <span className="max-sm:hidden">{primaryLabel}</span>
-              <span className="sm:hidden">Mensagem</span>
-            </motion.button>
+          <AnimatePresence mode="wait" initial={false}>
+            {collapsed ? (
+              <motion.button
+                key="collapsed"
+                {...TAP_BUTTON}
+                type="button"
+                onClick={() => setCollapsed(false)}
+                aria-label="Expandir controles"
+                aria-expanded={false}
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8, transition: { duration: 0.14, ease: "easeIn" } }}
+                transition={POPOVER_TRANSITION}
+                className="hud-panel mx-auto flex h-12 w-12 items-center justify-center rounded-full text-[#E7EEF7]"
+              >
+                <Sparkles className="h-5 w-5" aria-hidden />
+              </motion.button>
+            ) : (
+              <motion.div
+                key="expanded"
+                initial={{ opacity: 0, scale: 0.92 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.94, transition: { duration: 0.14, ease: "easeIn" } }}
+                transition={POPOVER_TRANSITION}
+                className="hud-panel flex items-center gap-1 rounded-full py-2 pl-2 pr-2.5"
+              >
+                <motion.button
+                  {...TAP_BUTTON}
+                  type="button"
+                  onClick={onPrimary}
+                  className="flex h-11 shrink-0 items-center gap-2 rounded-full bg-[#F2EFE8] pl-3.5 pr-4 text-[11.5px] font-bold tracking-[0.04em] text-[#1C1A17] hover:bg-white"
+                >
+                  <Sparkles className="h-4 w-4" aria-hidden />
+                  <span className="max-sm:hidden">{primaryLabel}</span>
+                  <span className="sm:hidden">Mensagem</span>
+                </motion.button>
 
-            <span className="mx-1 h-7 w-px shrink-0 bg-white/12" aria-hidden />
+                <span className="mx-1 h-7 w-px shrink-0 bg-white/12" aria-hidden />
 
-            <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto pb-0.5 [scrollbar-width:none]">
-              <BarIconButton
-                icon={<Palette className="h-[18px] w-[18px]" aria-hidden />}
-                label="Temas das mensagens"
-                onClick={() => toggleMenu("theme")}
-                active={menu === "theme"}
-                expanded={menu === "theme"}
-                dot={themeValue !== "all"}
-              />
-              <BarIconButton
-                icon={<Heart className={`h-[18px] w-[18px] ${favoritesOpen ? "fill-current" : ""}`} aria-hidden />}
-                label={`Favoritas (${favoriteCount})`}
-                onClick={onOpenFavorites}
-                active={favoritesOpen}
-                badge={favoriteCount}
-              />
-              <BarIconButton
-                icon={
-                  <motion.span whileHover={{ rotate: 180 }} transition={{ type: "spring", stiffness: 180, damping: 16 }}>
-                    <RefreshCw className="h-[18px] w-[18px]" aria-hidden />
-                  </motion.span>
-                }
-                label="Gerar uma nova árvore"
-                onClick={onRegenerate}
-              />
-              <BarIconButton
-                icon={<Wind className="h-[18px] w-[18px]" aria-hidden />}
-                label="Respirar com a folha"
-                onClick={onBreathing}
-              />
-              <BarIconButton
-                icon={<HeartPulse className="h-[18px] w-[18px]" aria-hidden />}
-                label="Check-in emocional"
-                onClick={() => toggleMenu("emotions")}
-                active={menu === "emotions"}
-                expanded={menu === "emotions"}
-              />
-              <BarIconButton
-                icon={<SlidersHorizontal className="h-[18px] w-[18px]" aria-hidden />}
-                label="Modo sensorial"
-                onClick={() => toggleMenu("sensations")}
-                active={menu === "sensations"}
-                expanded={menu === "sensations"}
-                dot={sensoryMode !== "default"}
-              />
-              <BarIconButton
-                icon={
-                  sceneVariant === "night" ? (
-                    <Moon className="h-[18px] w-[18px]" aria-hidden />
-                  ) : sceneVariant === "evening" ? (
-                    <Sunset className="h-[18px] w-[18px]" aria-hidden />
-                  ) : (
-                    <Sun className="h-[18px] w-[18px]" aria-hidden />
-                  )
-                }
-                label="Alterar período do dia (Manhã, Tarde, Noite)"
-                onClick={() => toggleMenu("daytime")}
-                active={menu === "daytime"}
-                expanded={menu === "daytime"}
-              />
-              {audioEnabled ? (
+                <div className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  <BarIconButton
+                    icon={<Palette className="h-[18px] w-[18px]" aria-hidden />}
+                    label="Temas das mensagens"
+                    onClick={() => toggleMenu("theme")}
+                    active={menu === "theme"}
+                    expanded={menu === "theme"}
+                    dot={themeValue !== "all"}
+                  />
+                  <BarIconButton
+                    icon={<Heart className={`h-[18px] w-[18px] ${favoritesOpen ? "fill-current" : ""}`} aria-hidden />}
+                    label={`Favoritas (${favoriteCount})`}
+                    onClick={onOpenFavorites}
+                    active={favoritesOpen}
+                    badge={favoriteCount}
+                  />
+                  <BarIconButton
+                    icon={
+                      <motion.span whileHover={{ rotate: 180 }} transition={{ type: "spring", stiffness: 180, damping: 16 }}>
+                        <RefreshCw className="h-[18px] w-[18px]" aria-hidden />
+                      </motion.span>
+                    }
+                    label="Gerar uma nova árvore"
+                    onClick={onRegenerate}
+                  />
+                  <BarIconButton
+                    icon={<Wind className="h-[18px] w-[18px]" aria-hidden />}
+                    label="Respirar com a folha"
+                    onClick={onBreathing}
+                  />
+                  <BarIconButton
+                    icon={<HeartPulse className="h-[18px] w-[18px]" aria-hidden />}
+                    label="Check-in emocional"
+                    onClick={() => toggleMenu("emotions")}
+                    active={menu === "emotions"}
+                    expanded={menu === "emotions"}
+                  />
+                  <BarIconButton
+                    icon={<SlidersHorizontal className="h-[18px] w-[18px]" aria-hidden />}
+                    label="Modo sensorial"
+                    onClick={() => toggleMenu("sensations")}
+                    active={menu === "sensations"}
+                    expanded={menu === "sensations"}
+                    dot={sensoryMode !== "default"}
+                  />
+                  <BarIconButton
+                    icon={
+                      sceneVariant === "night" ? (
+                        <Moon className="h-[18px] w-[18px]" aria-hidden />
+                      ) : sceneVariant === "evening" ? (
+                        <Sunset className="h-[18px] w-[18px]" aria-hidden />
+                      ) : (
+                        <Sun className="h-[18px] w-[18px]" aria-hidden />
+                      )
+                    }
+                    label="Alterar período do dia (Manhã, Tarde, Noite)"
+                    onClick={() => toggleMenu("daytime")}
+                    active={menu === "daytime"}
+                    expanded={menu === "daytime"}
+                  />
+                  {audioEnabled ? (
+                    <BarIconButton
+                      icon={muted ? <VolumeX className="h-[18px] w-[18px]" aria-hidden /> : <Volume2 className="h-[18px] w-[18px]" aria-hidden />}
+                      label={muted ? "Ativar som" : "Silenciar"}
+                      onClick={onToggleMute}
+                      dot={muted}
+                    />
+                  ) : null}
+                </div>
+
+                <span className="mx-1 h-7 w-px shrink-0 bg-white/12" aria-hidden />
+
                 <BarIconButton
-                  icon={muted ? <VolumeX className="h-[18px] w-[18px]" aria-hidden /> : <Volume2 className="h-[18px] w-[18px]" aria-hidden />}
-                  label={muted ? "Ativar som" : "Silenciar"}
-                  onClick={onToggleMute}
-                  dot={muted}
+                  icon={<ChevronDown className="h-[18px] w-[18px]" aria-hidden />}
+                  label="Recolher controles"
+                  onClick={collapseBar}
                 />
-              ) : null}
-            </div>
-          </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </motion.div>

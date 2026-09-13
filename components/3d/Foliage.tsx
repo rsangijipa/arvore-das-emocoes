@@ -6,7 +6,7 @@ import * as THREE from "three";
 
 import type { LeafNode } from "@/lib/tree/generateTree";
 import { createLeafDetailTexture, messageLeafTone } from "@/lib/tree/leafArtwork";
-import { createLeafVariants } from "@/lib/tree/leafGeometry";
+import { COMMON_LEAF_VARIANTS, createLeafVariants } from "@/lib/tree/leafGeometry";
 import { createLeafMaterial, updateSunDirection } from "@/lib/tree/leafMaterial";
 import { SUN_POSITION } from "@/lib/theme/scene-tokens";
 import { BRANCH_SWAY_GAIN, windFieldAt } from "@/lib/tree/windSway";
@@ -124,9 +124,9 @@ export function Foliage({
   const variantGeometries = useMemo(() => createLeafVariants(detail), [detail]);
 
   const groups = useMemo(() => {
-    const buckets: LeafNode[][] = [[], [], []];
+    const buckets: LeafNode[][] = Array.from({ length: COMMON_LEAF_VARIANTS }, () => []);
     for (const leaf of leaves) {
-      buckets[Math.min(2, leaf.variant)].push(leaf);
+      buckets[Math.min(COMMON_LEAF_VARIANTS - 1, leaf.variant)].push(leaf);
     }
     return buckets;
   }, [leaves]);
@@ -153,7 +153,7 @@ export function Foliage({
   }, [groups, variantGeometries]);
 
   const messageGeometry = useMemo(() => {
-    const geometry = ensureVertexColors(variantGeometries[3].clone());
+    const geometry = ensureVertexColors(variantGeometries[COMMON_LEAF_VARIANTS].clone());
     const count = Math.max(1, messageLeaves.length);
     const phases = new Float32Array(count);
     const stiffness = new Float32Array(count);
@@ -282,6 +282,13 @@ export function Foliage({
         if (leaf.exposure > 0.78 && ((leaf.phase * 3.7) % 1) < 0.08) {
           color.lerp(AUTUMN_TONE, 0.5);
         }
+
+        // variacao sutil de tom entre folhas com a mesma exposicao, para nao
+        // parecerem clonadas: leve deriva de matiz/saturacao/luminosidade
+        const hueSeed = (leaf.phase * 12.9) % 1;
+        const satSeed = (leaf.phase * 5.3 + 0.37) % 1;
+        const lightSeed = (leaf.phase * 8.7 + 0.61) % 1;
+        color.offsetHSL((hueSeed - 0.5) * 0.03, (satSeed - 0.5) * 0.08, (lightSeed - 0.5) * 0.04);
 
         mesh.setColorAt(index, color);
       }

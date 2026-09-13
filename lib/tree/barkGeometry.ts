@@ -59,6 +59,7 @@ type TubeResult = {
   uvs: number[];
   colors: number[];
   indices: number[];
+  flex: number[];
 };
 
 /** transicao suave 0->1, sem quebra de derivada nas pontas (evita degrau visivel no colar) */
@@ -67,7 +68,13 @@ function smoothstep(edge0: number, edge1: number, x: number) {
   return v * v * (3 - 2 * v);
 }
 
-function buildTube(segment: BranchSegment, quality: BarkQuality, seedOffset: number, target: TubeResult) {
+function buildTube(
+  segment: BranchSegment,
+  quality: BarkQuality,
+  seedOffset: number,
+  referenceRadius: number,
+  target: TubeResult,
+) {
   const { curve, radiusBottom, radiusTop, depth, kind, parentAttachRadius, isLateral } = segment;
 
   const isTrunk = kind === "trunk" && depth === 0;
@@ -162,6 +169,13 @@ function buildTube(segment: BranchSegment, quality: BarkQuality, seedOffset: num
       target.normals.push(normal.x, normal.y, normal.z);
       target.uvs.push(u, t * curveLength * 1.6);
 
+      // vento hierarquico: raio estrutural (sem groove/elipse) contra o raio
+      // do tronco define o quanto ESTE ponto flexiona alem da altura sozinha —
+      // tronco fica perto de 0.2 (rigido), raminhos finos chegam a ~1.6
+      const thickness = THREE.MathUtils.clamp(radius / referenceRadius, 0, 1);
+      const flexBoost = THREE.MathUtils.lerp(1.6, 0.2, Math.pow(thickness, 0.6));
+      target.flex.push(flexBoost);
+
       // -------------------------------------------------------- cor
       const heightMix = THREE.MathUtils.clamp(t, 0, 1);
       if (depth <= 1) {
@@ -218,6 +232,7 @@ function buildTube(segment: BranchSegment, quality: BarkQuality, seedOffset: num
     target.normals.push(0, isTrunk ? -1 : 1, 0);
     target.uvs.push(0.5, 0.5);
     target.colors.push(WOOD_DEEP.r, WOOD_DEEP.g, WOOD_DEEP.b);
+    target.flex.push(0.2);
 
     for (let j = 0; j < radialSegments; j += 1) {
       if (isTrunk) {
@@ -237,10 +252,12 @@ export function buildBarkGeometry(
     return null;
   }
 
-  const target: TubeResult = { positions: [], normals: [], uvs: [], colors: [], indices: [] };
+  const target: TubeResult = { positions: [], normals: [], uvs: [], colors: [], indices: [], flex: [] };
+
+  const referenceRadius = Math.max(0.01, ...segments.map((segment) => segment.radiusBottom));
 
   for (let index = 0; index < segments.length; index += 1) {
-    buildTube(segments[index], quality, (index % 17) * 0.37, target);
+    buildTube(segments[index], quality, (index % 17) * 0.37, referenceRadius, target);
   }
 
   const geometry = new THREE.BufferGeometry();
@@ -248,6 +265,7 @@ export function buildBarkGeometry(
   geometry.setAttribute("normal", new THREE.Float32BufferAttribute(target.normals, 3));
   geometry.setAttribute("uv", new THREE.Float32BufferAttribute(target.uvs, 2));
   geometry.setAttribute("color", new THREE.Float32BufferAttribute(target.colors, 3));
+  geometry.setAttribute("aFlex", new THREE.Float32BufferAttribute(target.flex, 1));
   geometry.setIndex(target.indices);
   geometry.computeVertexNormals();
   geometry.computeBoundingSphere();

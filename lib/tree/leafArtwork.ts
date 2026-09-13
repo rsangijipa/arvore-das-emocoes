@@ -186,14 +186,19 @@ export function buildLeafPalette(seed: number) {
   };
 }
 
-/** cor da folha na copa, no espaco linear do three */
+/**
+ * Cor da folha na copa, no espaco linear do three.
+ *
+ * Faixa mais larga que a do cartao (que precisa ficar sempre clara e legivel
+ * sob texto escuro): aqui a folha e vista de longe, entao pode variar mais —
+ * de ambar profundo a palha clara — sem perder a familia "dourada".
+ */
 export function leafCanopyColor(seed: number, target = new THREE.Color()) {
   const random = createLeafRandom(seed);
-  const hue = (31 + random() * 16) / 360;
-  const saturation = (34 + random() * 16) / 100;
-  // a copa recebe o tom um pouco mais saturado: em escala pequena e contra o
-  // verde, o bege claro do cartao sumiria
-  return target.setHSL(hue, Math.min(0.58, saturation + 0.1), 0.52);
+  const hue = (24 + random() * 34) / 360;
+  const saturation = (30 + random() * 32) / 100;
+  const lightness = (44 + random() * 20) / 100;
+  return target.setHSL(hue, Math.min(0.68, saturation + 0.1), lightness);
 }
 
 // ------------------------------------------------------------------- textura
@@ -288,7 +293,7 @@ export function createLeafDetailTexture(resolution = 512): THREE.CanvasTexture |
  * Um por indice, estaveis: a folha que voa precisa carregar exatamente a cor
  * da folha que estava no galho.
  */
-const MESSAGE_LEAF_TONES = Array.from({ length: 12 }, (_, index) =>
+const MESSAGE_LEAF_TONES = Array.from({ length: 24 }, (_, index) =>
   leafCanopyColor(Math.imul(index + 1, 2654435761) ^ 0x1f2b3c),
 );
 

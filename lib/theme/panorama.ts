@@ -144,6 +144,48 @@ function birdPath(x: number, y: number, s: number) {
   return `M ${x - 14 * s} ${y + 4 * s} Q ${x - 7 * s} ${y - 6 * s} ${x} ${y} Q ${x + 7 * s} ${y - 6 * s} ${x + 14 * s} ${y + 4 * s}`;
 }
 
+/** altura da mesma curva usada em hillPath, para ancorar detalhes na crista */
+function hillHeightAt(t: number, seedPhase: number, amplitude: number, harmonics: number[]) {
+  let height = 0;
+  for (let harmonic = 0; harmonic < harmonics.length; harmonic += 1) {
+    const frequency = harmonics[harmonic];
+    height += Math.sin(t * Math.PI * 2 * frequency + seedPhase * (harmonic + 1)) / (harmonic + 1.4);
+  }
+  return Math.max(0, height) * amplitude;
+}
+
+/** silhueta de pinheiro/arbusto minusculo, para pontuar a crista mais proxima */
+function treeMarkPath(x: number, y: number, s: number) {
+  const w = 9 * s;
+  const h = 26 * s;
+  return `M ${x} ${y - h} L ${x + w} ${y} L ${x - w} ${y} Z M ${x - 1.5 * s} ${y} L ${x + 1.5 * s} ${y} L ${x + 1.5 * s} ${y + 5 * s} L ${x - 1.5 * s} ${y + 5 * s} Z`;
+}
+
+/**
+ * Linha de arvores ao longo da crista mais proxima: pontua o horizonte com
+ * detalhe fino sem exigir geometria 3D real — visivel so em silhueta, entao
+ * o SVG plano ja convence a essa distancia.
+ */
+function treelineSvg(seedPhase: number, amplitude: number, baseline: number, harmonics: number[], color: string) {
+  const marks: string[] = [];
+  let rng = Math.floor((seedPhase + 7) * 104729) >>> 0;
+  const rand = () => {
+    rng = (Math.imul(1664525, rng) + 1013904223) | 0;
+    return (rng >>> 0) / 4294967296;
+  };
+
+  const step = VIEW_WIDTH / 340;
+  for (let x = 0; x < VIEW_WIDTH; x += step) {
+    if (rand() > 0.6) continue;
+    const t = x / VIEW_WIDTH;
+    const y = baseline - hillHeightAt(t, seedPhase, amplitude, harmonics);
+    const scale = 0.55 + rand() * 0.85;
+    marks.push(`<path d="${treeMarkPath(x + (rand() - 0.5) * step * 0.6, y + 2, scale)}" fill="${color}"/>`);
+  }
+
+  return `<g opacity="0.82">${marks.join("")}</g>`;
+}
+
 export function createPanoramaSvg(variant: SceneVariant = "day"): string {
   const sky = SKY_PALETTES[variant];
   const isNight = variant === "night";
@@ -304,10 +346,21 @@ export function createPanoramaSvg(variant: SceneVariant = "day"): string {
   ${stars.length > 0 ? `<g>${stars.join("")}</g>` : ""}
   ${celestialBody}
 
-  <!-- montanhas distantes (3 camadas com profundidade atmosferica) -->
+  <!-- montanhas distantes (4 camadas com profundidade atmosferica) -->
   <path d="${hillPath(0.7, 44, HORIZON + 2, [3, 7, 13])}" fill="${isNight ? "#142410" : isEvening ? "#5C3E20" : "#8AB474"}" opacity="0.6"/>
   <path d="${hillPath(2.3, 30, HORIZON + 10, [5, 11, 19])}" fill="${isNight ? "#101D0E" : isEvening ? "#4C3218" : "#60964A"}" opacity="0.78"/>
   <path d="${hillPath(4.1, 18, HORIZON + 20, [2, 9, 17])}" fill="${isNight ? "#0C180B" : isEvening ? "#3E2812" : "#4C8836"}" opacity="0.92"/>
+
+  <!-- crista mais proxima: contorno de luz rasante + linha de arvores -->
+  <path d="${hillPath(5.6, 24, HORIZON + 34, [4, 8, 15])}" fill="${isNight ? "#081406" : isEvening ? "#2C1A0C" : "#3C742A"}" opacity="0.97"/>
+  ${
+    isEvening || isMorning
+      ? `<path d="${hillPath(5.6, 24, HORIZON + 34, [4, 8, 15])
+          .split(" Z")[0]
+          .replace(/^M -2,\d+(\.\d+)? L /, "M ")}" fill="none" stroke="${isEvening ? "#FFB868" : "#FFE7B0"}" stroke-width="2.4" opacity="0.5"/>`
+      : ""
+  }
+  ${treelineSvg(5.6, 24, HORIZON + 34, [4, 8, 15], isNight ? "#050D04" : isEvening ? "#1E1108" : "#254A18")}
 
   <!-- nevoa no horizonte para fusao suave do solo -->
   <rect x="0" y="${HORIZON - 70}" width="${VIEW_WIDTH}" height="72" fill="url(#haze)"/>

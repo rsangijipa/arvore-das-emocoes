@@ -181,7 +181,7 @@ export function LeafMessageCard({
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.42, delay: 0.55, ease: "easeOut" }}
-                className="relative px-2"
+                className="relative px-2 antialiased"
                 style={{
                   color: ink,
                   fontFamily: font.family,
@@ -190,9 +190,10 @@ export function LeafMessageCard({
                   fontSize: isMobile
                     ? `calc(clamp(1.18rem, 4.8vw, 1.9rem) * ${font.size})`
                     : `calc(clamp(1.5rem, 2.45vw, 2.65rem) * ${font.size})`,
-                  lineHeight: 1.38,
+                  lineHeight: 1.42,
                   textWrap: "balance",
-                  textShadow: "0 1px 1px rgba(255,255,255,0.72)",
+                  textRendering: "optimizeLegibility",
+                  textShadow: "0 1px 2px rgba(255,255,255,0.8), 0 1px 14px rgba(255,255,255,0.25)",
                 }}
               >
                 “{quote.text}”
@@ -259,9 +260,9 @@ export function LeafMessageCard({
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 12 }}
               transition={{ duration: 0.35, delay: 0.52, ease: "easeOut" }}
-              className="pointer-events-auto absolute inset-x-0 bottom-[max(1.2rem,env(safe-area-inset-bottom))] flex flex-col items-center gap-2.5 px-4"
+              className="pointer-events-auto absolute inset-x-0 bottom-[max(0.9rem,env(safe-area-inset-bottom))] flex flex-col items-center gap-1.5 px-4"
             >
-              <div className="min-h-[22px]" aria-live="polite">
+              <div className="min-h-[18px]" aria-live="polite">
                 <AnimatePresence>
                   {favoriteFeedback ?? shareFeedback ? (
                     <motion.p
@@ -269,7 +270,7 @@ export function LeafMessageCard({
                       initial={{ opacity: 0, y: 6 }}
                       animate={{ opacity: 1, y: 0 }}
                       exit={{ opacity: 0, y: 4 }}
-                      className="rounded-full border border-white/12 bg-black/55 px-3 py-1 text-[11px] text-[#F0DFB4] backdrop-blur-md"
+                      className="rounded-full border border-white/12 bg-black/55 px-2.5 py-0.5 text-[10px] text-[#F0DFB4] backdrop-blur-md"
                     >
                       {favoriteFeedback ?? shareFeedback}
                     </motion.p>
@@ -277,18 +278,18 @@ export function LeafMessageCard({
                 </AnimatePresence>
               </div>
 
-              <div className="flex items-center gap-1 rounded-full border border-white/14 bg-black/60 p-1.5 shadow-[0_10px_34px_rgba(0,0,0,0.5)] backdrop-blur-xl">
+              <div className="flex max-w-full items-center gap-0.5 overflow-x-auto rounded-full border border-white/14 bg-black/65 p-1 shadow-[0_10px_30px_rgba(0,0,0,0.5)] backdrop-blur-xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 <ControlButton
                   onClick={onFavorite}
                   ariaPressed={isFavorite}
                   active={isFavorite}
-                  icon={<Heart className={`h-4 w-4 ${isFavorite ? "fill-current" : ""}`} aria-hidden />}
+                  icon={<Heart className={`h-3.5 w-3.5 ${isFavorite ? "fill-current" : ""}`} aria-hidden />}
                   label={isFavorite ? "Guardada" : "Guardar"}
                 />
 
                 <ControlButton
                   onClick={onRandom}
-                  icon={<Shuffle className="h-4 w-4" aria-hidden />}
+                  icon={<Shuffle className="h-3.5 w-3.5" aria-hidden />}
                   label="Outra folha"
                   disabled={isReturning}
                 />
@@ -298,21 +299,21 @@ export function LeafMessageCard({
                     onClick={() => {
                       void handleShare();
                     }}
-                    icon={<Share2 className="h-4 w-4" aria-hidden />}
+                    icon={<Share2 className="h-3.5 w-3.5" aria-hidden />}
                     label="Compartilhar"
                   />
                 )}
 
-                <span className="mx-1 h-6 w-px bg-white/14" aria-hidden />
+                <span className="mx-0.5 h-5 w-px shrink-0 bg-white/14" aria-hidden />
 
-                <ControlButton onClick={onClose} icon={<X className="h-4 w-4" aria-hidden />} label="Voltar" />
+                <ControlButton onClick={onClose} icon={<X className="h-3.5 w-3.5" aria-hidden />} label="Voltar" />
               </div>
 
               <motion.button
                 {...TAP_BUTTON}
                 type="button"
                 onClick={onOpenFavorites}
-                className="flex h-10 items-center rounded-full px-4 text-[10px] font-semibold tracking-[0.18em] uppercase text-white/50 transition hover:bg-white/10 hover:text-white/90 active:bg-white/15"
+                className="flex h-7 items-center rounded-full px-3 text-[9.5px] font-semibold tracking-[0.16em] uppercase text-white/50 transition hover:bg-white/10 hover:text-white/90 active:bg-white/15"
               >
                 Favoritas ({favoriteCount})
               </motion.button>
@@ -348,7 +349,7 @@ function ControlButton({
       aria-pressed={ariaPressed}
       aria-label={label}
       whileHover={disabled ? undefined : { background: "rgba(255,255,255,0.1)" }}
-      className={`flex h-12 items-center gap-2 rounded-full px-4 text-[11px] font-bold tracking-[0.1em] uppercase sm:h-11 ${
+      className={`flex h-10 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3 text-[10px] font-bold tracking-[0.07em] uppercase transition-colors sm:h-9 sm:px-3.5 sm:text-[10.5px] sm:tracking-[0.08em] ${
         disabled
           ? "cursor-not-allowed text-white/25"
           : active
@@ -357,12 +358,13 @@ function ControlButton({
       }`}
     >
       <motion.span
+        className="shrink-0"
         animate={active ? { rotate: [0, -10, 0], scale: [1, 1.2, 1] } : {}}
         transition={{ duration: 0.4, ease: "easeOut" }}
       >
         {icon}
       </motion.span>
-      <span>{label}</span>
+      <span className="whitespace-nowrap">{label}</span>
     </motion.button>
   );
 }
