@@ -6,6 +6,7 @@ import * as THREE from "three";
 
 import { buildBarkGeometry } from "@/lib/tree/barkGeometry";
 import type { BranchSegment } from "@/lib/tree/generateTree";
+import { applyBarkTriplanarToShader } from "@/lib/tree/treeBarkMaterial";
 import { BRANCH_SWAY_GAIN, WIND_FIELD_GLSL } from "@/lib/tree/windSway";
 
 type TreeBarkProps = {
@@ -37,7 +38,12 @@ export function TreeBark({
   const [uniforms] = useState(() => ({
     uTime: { value: 0 },
     uSway: { value: 0 },
+    uMicroDetail: { value: detail < 0.7 ? 0 : 1 },
   }));
+
+  useEffect(() => {
+    uniforms.uMicroDetail.value = detail < 0.7 ? 0 : 1;
+  }, [detail, uniforms]);
 
   const material = useMemo(() => {
     const mat = new THREE.MeshStandardMaterial({
@@ -50,6 +56,7 @@ export function TreeBark({
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, uniforms);
 
+      // 1) vento (vertex shader)
       shader.vertexShader = shader.vertexShader
         .replace(
           "#include <common>",
@@ -61,9 +68,12 @@ export function TreeBark({
           `#include <begin_vertex>
           transformed += windField(transformed);`,
         );
+
+      // 2) microdetalhe triplanar de casca (vertex worldpos + fragment)
+      applyBarkTriplanarToShader(shader, { uMicroDetail: uniforms.uMicroDetail });
     };
 
-    mat.customProgramCacheKey = () => "tree-bark-wind-v1";
+    mat.customProgramCacheKey = () => "tree-bark-wind-triplanar-v1";
     return mat;
   }, [uniforms]);
 

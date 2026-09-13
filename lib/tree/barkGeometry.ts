@@ -61,12 +61,22 @@ type TubeResult = {
   indices: number[];
 };
 
+/** transicao suave 0->1, sem quebra de derivada nas pontas (evita degrau visivel no colar) */
+function smoothstep(edge0: number, edge1: number, x: number) {
+  const v = THREE.MathUtils.clamp((x - edge0) / (edge1 - edge0), 0, 1);
+  return v * v * (3 - 2 * v);
+}
+
 function buildTube(segment: BranchSegment, quality: BarkQuality, seedOffset: number, target: TubeResult) {
-  const { curve, radiusBottom, radiusTop, depth, kind } = segment;
+  const { curve, radiusBottom, radiusTop, depth, kind, parentAttachRadius, isLateral } = segment;
 
   const isTrunk = kind === "trunk" && depth === 0;
   const isRoot = kind === "root";
   const thick = isTrunk || isRoot || depth <= 1;
+
+  const hasCollar = Boolean(isLateral && parentAttachRadius);
+  const collarSpan = 0.15;
+  const ellipsePhase = seedOffset * 5.1;
 
   const radialBase = isTrunk ? 16 : isRoot ? 10 : depth <= 1 ? 10 : depth <= 2 ? 8 : 5;
   const radialSegments = Math.max(4, Math.round(radialBase * quality.detail));
@@ -97,6 +107,14 @@ function buildTube(segment: BranchSegment, quality: BarkQuality, seedOffset: num
       radius *= 1 + 0.85 * Math.pow(1 - t, 6);
     }
 
+    if (hasCollar && t < collarSpan) {
+      // colar de fusao com o pai: infla a base do lateral e funde suavemente
+      // ate o raio normal do proprio galho (smoothstep evita degrau na costura)
+      const collarRadius = (parentAttachRadius as number) * 0.9;
+      const blend = smoothstep(0, collarSpan, t);
+      radius = collarRadius + (radius - collarRadius) * blend;
+    }
+
     const frameNormal = frames.normals[i];
     const frameBinormal = frames.binormals[i];
 
@@ -118,6 +136,9 @@ function buildTube(segment: BranchSegment, quality: BarkQuality, seedOffset: num
         // lobos das sapopemas
         const lobe = 0.5 + 0.5 * Math.cos(theta * lobeCount + lobePhase);
         localRadius *= 1 + 0.34 * lobe * Math.pow(1 - t, 4.2);
+
+        // secao transversal levemente eliptica, para quebrar a simetria de tubo perfeito
+        localRadius *= 1 + 0.05 * Math.cos(theta * 2 + ellipsePhase);
       }
 
       let groove = 0;

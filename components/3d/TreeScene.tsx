@@ -14,12 +14,13 @@ import { TreeBark } from "@/components/3d/TreeBark";
 import { WindParticles } from "@/components/3d/WindParticles";
 import { GRASS_FAR_COLOR, GRASS_NEAR_COLOR } from "@/lib/theme/panorama";
 import {
+  CAMERA_FILL_LIGHT_RATIO,
   MESSAGE_LEAF_COUNT,
   SCENE_QUALITY_CONFIGS,
-  SUN_CAMERA_YAW,
   SUN_POSITION,
 } from "@/lib/theme/scene-tokens";
 import { type SceneVariant, SCENE_VARIANT_TOKENS } from "@/lib/theme/scene-variant";
+import { getSunDirection } from "@/lib/theme/sun-direction";
 import { generateTree } from "@/lib/tree/generateTree";
 import type { QualityConfig, QualityProfile } from "@/types/performance";
 import type { EmotionalSceneProfile, SensoryMode } from "@/types/emotional-session";
@@ -56,7 +57,6 @@ export type TreeSceneApi = {
 };
 
 const TREE_OFFSET = new THREE.Vector3(0, 0, 0);
-const WORLD_UP = new THREE.Vector3(0, 1, 0);
 
 function easeOutCubic(t: number) {
   return 1 - Math.pow(1 - t, 3);
@@ -371,7 +371,9 @@ function SceneContent({
   const { camera, gl } = useThree();
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
   const sunRef = useRef<THREE.DirectionalLight | null>(null);
-  const sunScratch = useMemo(() => new THREE.Vector3(), []);
+  const fillLightRef = useRef<THREE.DirectionalLight | null>(null);
+  const sunDirectionRef = useRef(new THREE.Vector3());
+  const fillScratch = useMemo(() => new THREE.Vector3(), []);
 
   const tokens = SCENE_VARIANT_TOKENS[sceneVariant];
 
@@ -498,19 +500,34 @@ function SceneContent({
   useFrame((state, delta) => {
     if (!readyRef.current) { readyRef.current = true; onSceneReady(); }
 
+    // luz principal ("World Sun"): direcao fisica do sol/lua do periodo atual,
+    // a mesma usada para desenhar o astro no panorama do ceu — nao acompanha
+    // a camera, entao a arvore fica em silhueta quando vista do lado escuro.
     const sun = sunRef.current;
     if (sun) {
-      sunScratch.set(camera.position.x, 0, camera.position.z);
-      if (sunScratch.lengthSq() < 1e-6) sunScratch.set(0, 0, 1);
-      sunScratch.normalize().applyAxisAngle(WORLD_UP, SUN_CAMERA_YAW);
-      SUN_POSITION.set(
-        sunScratch.x * framing.distance * 1.15,
-        framing.height * 1.9,
-        sunScratch.z * framing.distance * 1.15,
-      );
+      getSunDirection(sceneVariant, sunDirectionRef.current);
+      const sunDistance = Math.max(framing.distance * 1.6, framing.height * 2.2);
+      SUN_POSITION.copy(sunDirectionRef.current).multiplyScalar(sunDistance);
+      SUN_POSITION.y += framing.targetY;
       sun.position.copy(SUN_POSITION);
       sun.target.position.set(0, framing.targetY, 0);
       sun.target.updateMatrixWorld();
+    }
+
+    // fill light discreta acoplada a camera: so evita silhueta totalmente
+    // escura do lado oposto ao sol, nao compete com a direcao dominante.
+    const fill = fillLightRef.current;
+    if (fill) {
+      fillScratch.set(camera.position.x, 0, camera.position.z);
+      if (fillScratch.lengthSq() < 1e-6) fillScratch.set(0, 0, 1);
+      fillScratch.normalize();
+      fill.position.set(
+        fillScratch.x * framing.distance * 1.1,
+        framing.height * 1.4,
+        fillScratch.z * framing.distance * 1.1,
+      );
+      fill.target.position.set(0, framing.targetY, 0);
+      fill.target.updateMatrixWorld();
     }
 
     if (introSeedRef.current !== seed) {
@@ -553,6 +570,7 @@ function SceneContent({
       <hemisphereLight intensity={1.15 * emotionalProfile.ambientLight} color={tokens.skyColor} groundColor={tokens.groundColor} />
       <ambientLight intensity={tokens.ambientIntensity * emotionalProfile.ambientLight} color={tokens.ambientColor} />
 
+      {/* World Sun: direcao fisica real do sol/lua do periodo do dia (nao acompanha a camera) */}
       <directionalLight
         ref={sunRef}
         position={[SUN_POSITION.x, SUN_POSITION.y, SUN_POSITION.z]}
@@ -569,6 +587,19 @@ function SceneContent({
         shadow-camera-bottom={-shadowExtent}
         shadow-bias={-0.0004}
         shadow-normalBias={0.06}
+      />
+
+      {/*
+        Fill light discreta acoplada a camera: garante que a arvore nunca vire
+        uma silhueta totalmente preta quando o usuario orbita para o lado
+        oposto ao sol/lua. Sem sombras e com intensidade baixa (fracao da luz
+        principal) para nao competir com a direcao dominante da "World Sun".
+      */}
+      <directionalLight
+        ref={fillLightRef}
+        intensity={tokens.sunIntensity * CAMERA_FILL_LIGHT_RATIO}
+        color={tokens.sunColor}
+        castShadow={false}
       />
 
       <directionalLight position={[-6, 4.5, -5]} intensity={0.6} color="#9FBEDA" />

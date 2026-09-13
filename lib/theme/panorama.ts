@@ -12,9 +12,32 @@ import type { SceneVariant } from "@/lib/theme/scene-variant";
  * - Noite: lua crescente brilhante com halo translúcido, 320 estrelas de tamanhos/opacidades variadas, colinas escuras sob luz prateada.
  */
 
-const VIEW_WIDTH = 4096;
-const VIEW_HEIGHT = 2048;
+export const VIEW_WIDTH = 4096;
+export const VIEW_HEIGHT = 2048;
 const HORIZON = VIEW_HEIGHT / 2;
+
+/**
+ * Posicao em pixels (no espaco do SVG do panorama) do astro celeste (sol/lua)
+ * desenhado para cada variante. Usada por `lib/theme/sun-direction.ts` para
+ * converter a posicao visual do astro em uma direcao 3D real, garantindo que a
+ * luz principal da cena venha do mesmo lugar em que o sol/lua aparece no ceu.
+ *
+ * "day" nao desenha um disco solar (ceu limpo), entao usamos uma posicao
+ * virtual bem alta e levemente a leste, coerente com um sol a pino.
+ */
+export function getCelestialPixelPosition(variant: SceneVariant): { x: number; y: number } {
+  switch (variant) {
+    case "night":
+      return { x: 920, y: 540 };
+    case "evening":
+      return { x: 2048, y: HORIZON - 18 };
+    case "morning":
+      return { x: 640, y: HORIZON - 90 };
+    case "day":
+    default:
+      return { x: 900, y: HORIZON - 340 };
+  }
+}
 
 export const HORIZON_COLOR = "#E6F2F8";
 export const SKY_TOP_COLOR = "#3E92D8";

@@ -24,6 +24,10 @@ export type BranchSegment = {
   kind: BranchKind;
   /** comprimento aproximado, usado para escolher a tesselacao */
   length: number;
+  /** raio do pai no ponto exato de insercao, usado para o branch collar */
+  parentAttachRadius?: number;
+  /** true quando o segmento e um galho lateral (nao continuacao apical nem tronco/raiz) */
+  isLateral?: boolean;
 };
 
 export type LeafKind = "common" | "message";
@@ -260,53 +264,80 @@ export function generateTree(options: GenerateTreeOptions): TreeData {
     const side = new THREE.Vector3();
     const upSide = new THREE.Vector3();
 
-    for (let index = 0; index < count; index += 1) {
-      // folhas se concentram na metade distal do raminho
-      const t = THREE.MathUtils.clamp(
-        0.26 + (index / Math.max(1, count - 1)) * 0.74 + (random() - 0.5) * 0.06,
+    // em vez de espalhar `count` folhas uniformemente, agrupamos em pequenas
+    // "manchas" (clusters) ao longo do raminho: cada ancora fica no mesmo
+    // esquema de distribuicao concentrado na metade distal, mas ganha de 2 a 6
+    // folhas com jitter local, criando lobos mais cheios e vazios entre eles.
+    const clusterCount = Math.max(1, Math.round(count / 4));
+    let phylloIndex = 0;
+    let emitted = 0;
+
+    for (let cluster = 0; cluster < clusterCount; cluster += 1) {
+      const anchorT = THREE.MathUtils.clamp(
+        0.26 + (cluster / Math.max(1, clusterCount - 1)) * 0.74 + (random() - 0.5) * 0.06,
         0,
         1,
       );
-      const point = curve.getPointAt(t);
-      const tangent = curve.getTangentAt(t).normalize();
+      const anchorPoint = curve.getPointAt(anchorT);
 
-      perpendicularFrame(tangent, side, upSide);
+      // modulacao de densidade deterministica: alguns raminhos ficam mais
+      // cheios, outros mais esparsos (0.6x a 1.4x), variando por posicao 3D
+      const densityJitter = 0.6 + random() * 0.8;
+      const clusterSize = Math.max(2, Math.min(6, Math.round((2 + random() * 4) * densityJitter)));
 
-      const phyllotaxis = roll + index * GOLDEN_ANGLE + random() * 0.2;
-      const radial = side
-        .clone()
-        .multiplyScalar(Math.cos(phyllotaxis))
-        .addScaledVector(upSide, Math.sin(phyllotaxis))
-        .normalize();
+      for (let leaf = 0; leaf < clusterSize; leaf += 1) {
+        if (emitted >= count + clusterCount * 3) {
+          break;
+        }
 
-      // eixo da lamina: abre em relacao ao raminho, busca luz e pende na ponta
-      const openAngle = 0.8 + random() * 0.55;
-      const blade = tangent
-        .clone()
-        .multiplyScalar(Math.cos(openAngle))
-        .addScaledVector(radial, Math.sin(openAngle))
-        .addScaledVector(UP, 0.3 - t * 0.4)
-        .normalize();
+        const t = THREE.MathUtils.clamp(anchorT + (random() - 0.5) * 0.05, 0, 1);
+        const point = anchorT === t ? anchorPoint : curve.getPointAt(t);
+        const tangent = curve.getTangentAt(t).normalize();
 
-      const attachRadius = radiusAtParam(radiusBottom, radiusTop, t);
-      const position = point.clone().addScaledVector(radial, attachRadius * 0.9);
+        perpendicularFrame(tangent, side, upSide);
 
-      const normal = new THREE.Vector3().crossVectors(blade, radial);
-      if (normal.lengthSq() < 1e-6) {
-        normal.copy(UP);
+        const phyllotaxis = roll + phylloIndex * GOLDEN_ANGLE + random() * 0.25;
+        phylloIndex += 1;
+        const radial = side
+          .clone()
+          .multiplyScalar(Math.cos(phyllotaxis))
+          .addScaledVector(upSide, Math.sin(phyllotaxis))
+          .normalize();
+
+        // eixo da lamina: abre em relacao ao raminho, busca luz e pende na ponta
+        const openAngle = 0.8 + random() * 0.55;
+        const blade = tangent
+          .clone()
+          .multiplyScalar(Math.cos(openAngle))
+          .addScaledVector(radial, Math.sin(openAngle))
+          .addScaledVector(UP, 0.3 - t * 0.4)
+          .normalize();
+
+        const attachRadius = radiusAtParam(radiusBottom, radiusTop, t);
+        // pequeno deslocamento radial extra dentro do cluster para evitar
+        // sobreposicao exata entre folhas da mesma "mancha"
+        const position = point
+          .clone()
+          .addScaledVector(radial, attachRadius * (0.85 + random() * 0.3));
+
+        const normal = new THREE.Vector3().crossVectors(blade, radial);
+        if (normal.lengthSq() < 1e-6) {
+          normal.copy(UP);
+        }
+        normal.normalize().applyAxisAngle(blade, (random() - 0.5) * 1.15).normalize();
+
+        rawLeaves.push({
+          position,
+          direction: blade,
+          normal,
+          scale: 0.8 + random() * 0.45,
+          phase: random() * Math.PI * 2,
+          variant: random() < 0.34 ? 0 : random() < 0.72 ? 1 : 2,
+          exposure: 0,
+          kind: "common",
+        });
+        emitted += 1;
       }
-      normal.normalize().applyAxisAngle(blade, (random() - 0.5) * 1.15).normalize();
-
-      rawLeaves.push({
-        position,
-        direction: blade,
-        normal,
-        scale: 0.8 + random() * 0.45,
-        phase: random() * Math.PI * 2,
-        variant: random() < 0.34 ? 0 : random() < 0.72 ? 1 : 2,
-        exposure: 0,
-        kind: "common",
-      });
     }
   }
 
@@ -318,6 +349,8 @@ export function generateTree(options: GenerateTreeOptions): TreeData {
     order: number,
     roll: number,
     kind: BranchKind,
+    parentAttachRadius?: number,
+    isLateral?: boolean,
   ) {
     if (segmentBudget <= 0 || radius < MIN_RADIUS || length < MIN_LENGTH) {
       return;
@@ -372,6 +405,8 @@ export function generateTree(options: GenerateTreeOptions): TreeData {
       depth: order,
       kind,
       length,
+      parentAttachRadius,
+      isLateral,
     });
 
     // toda secao fina ganha folhas, inclusive a ponta da continuacao apical
@@ -427,7 +462,17 @@ export function generateTree(options: GenerateTreeOptions): TreeData {
       // nasce ligeiramente dentro do pai para a juncao nao ficar vazada
       const childOrigin = attachPoint.clone().addScaledVector(childDirection, -attachRadius * 0.9);
 
-      growAxis(childOrigin, childDirection, childRadius, childLength, order + 1, childRoll, "branch");
+      growAxis(
+        childOrigin,
+        childDirection,
+        childRadius,
+        childLength,
+        order + 1,
+        childRoll,
+        "branch",
+        attachRadius,
+        true,
+      );
     }
 
     // -------------------------------------------------- continuacao apical
@@ -442,6 +487,8 @@ export function generateTree(options: GenerateTreeOptions): TreeData {
       order,
       roll + GOLDEN_ANGLE * 0.5,
       kind,
+      undefined,
+      false,
     );
   }
 
