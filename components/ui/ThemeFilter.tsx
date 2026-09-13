@@ -2,6 +2,7 @@
 
 import { motion } from "motion/react";
 
+import { TAP_CHIP, SPRING_FAST } from "@/lib/utils/spring";
 import type { ThemeFilter, ThemeOption } from "@/types/quote";
 
 type ThemeFilterProps = {
@@ -49,7 +50,7 @@ function FilterChip({
 }) {
   return (
     <motion.button
-      whileTap={{ scale: 0.95 }}
+      {...(active ? {} : TAP_CHIP)}
       type="button"
       role="radio"
       aria-checked={active}
@@ -59,7 +60,9 @@ function FilterChip({
        * min-height herdado de button em globals.css.
        * px-4 em vez de px-3.5 dá mais espaço para o texto + ponto de cor.
        */
-      className="relative flex h-9 shrink-0 items-center rounded-full px-4 text-[11.5px] font-semibold tracking-[0.06em] transition"
+      layout
+      transition={SPRING_FAST}
+      className="relative flex h-9 shrink-0 items-center rounded-full px-4 text-[11.5px] font-semibold tracking-[0.06em]"
       style={{
         border: `1px solid ${active ? `${color}70` : "rgba(209, 220, 236, 0.14)"}`,
         background: active ? `${color}2E` : "rgba(255, 255, 255, 0.04)",
@@ -68,10 +71,12 @@ function FilterChip({
       }}
     >
       {/* ponto de cor: identifica o tema mesmo quando o chip esta inativo */}
-      <span
+      <motion.span
         aria-hidden
+        animate={{ scale: active ? 1.3 : 1, opacity: active ? 1 : 0.5 }}
+        transition={SPRING_FAST}
         className="mr-1.5 inline-block h-1.5 w-1.5 shrink-0 rounded-full align-middle"
-        style={{ background: color, opacity: active ? 1 : 0.5 }}
+        style={{ background: color }}
       />
       {label}
     </motion.button>

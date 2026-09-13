@@ -2,14 +2,13 @@
 
 import dynamic from "next/dynamic";
 import { AnimatePresence, motion } from "motion/react";
-import { ChevronRight, Heart, RefreshCw, SlidersHorizontal, Sparkles, Volume2, VolumeX, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { FavoritesDrawer } from "@/components/ui/FavoritesDrawer";
 import { EmotionalCheckIn } from "@/components/experience/EmotionalCheckIn";
 import { BreathingLeaf } from "@/components/experience/BreathingLeaf";
 import { LeafMessageCard } from "@/components/ui/LeafMessageCard";
-import { ThemeFilter } from "@/components/ui/ThemeFilter";
+import { BottomActionBar } from "@/components/ui/BottomActionBar";
 import { themeLabel } from "@/data/labels";
 import { THEMES } from "@/data/themes";
 import { usePerformanceMode } from "@/hooks/usePerformanceMode";
@@ -32,11 +31,7 @@ import { getEmotionalSceneProfile, type Emotion, type SensoryMode } from "@/type
 
 const TreeScene = dynamic(() => import("@/components/3d/TreeScene"), {
   ssr: false,
-  loading: () => (
-    <div className="flex h-full w-full items-center justify-center text-xs tracking-[0.2em] uppercase text-[#DCE8F5]">
-      Carregando atmosfera...
-    </div>
-  ),
+  loading: () => null,
 });
 
 /** distribui as frases entre as folhas-mensagem de forma estável por semente */
@@ -72,19 +67,13 @@ export function ExperienceRoot() {
   const [isMobile, setIsMobile] = useState(false);
   const [loadingQuotes, setLoadingQuotes] = useState(true);
   const [sceneReady, setSceneReady] = useState(false);
-  const [showIntro, setShowIntro] = useState(false);
   const [introLocked, setIntroLocked] = useState(true);
-  const [showHint, setShowHint] = useState(true);
   const [favoritesOpen, setFavoritesOpen] = useState(false);
   const [favoriteFeedback, setFavoriteFeedback] = useState<string | null>(null);
-  const [hudExpanded, setHudExpanded] = useState(false);
-  /** ambiente visual: sempre abre em "morning"; o usuário troca pela top bar (Tarefa 3) */
+  /** ambiente visual: sempre abre em "morning" */
   const [sceneVariant] = useState<SceneVariant>("morning");
   /** true enquanto a folha animada ainda não voltou à copa após fechar o painel */
   const [isLeafReturning, setIsLeafReturning] = useState(false);
-  /** tooltip "Toque para abrir" — mostrado uma única vez no primeiro hover */
-  const [showHoverTooltip, setShowHoverTooltip] = useState(false);
-  const tooltipShownRef = useRef(false);
   /** quantas folhas foram lidas nesta sessão de árvore */
   const [readLeafCount, setReadLeafCount] = useState(0);
   const [checkInOpen, setCheckInOpen] = useState(false);
@@ -102,7 +91,6 @@ export function ExperienceRoot() {
 
   const favoriteFeedbackTimeout = useRef<number | null>(null);
   const hoverSoundCooldownRef = useRef(0);
-  const hudAutoCollapseDoneRef = useRef(false);
 
   const { playFavorite, playHover, playRandom, playClick, muted, toggleMute } = useSoundscape(true);
 
@@ -123,7 +111,6 @@ export function ExperienceRoot() {
   useEffect(() => {
     migrateLegacyStorage();
     setTreeSeed(createTreeSeed());
-    setShowIntro(window.localStorage.getItem(INTRO_STORAGE_KEY) !== "1");
   }, []);
 
   useEffect(() => {
@@ -134,10 +121,6 @@ export function ExperienceRoot() {
   useEffect(() => {
     window.localStorage.setItem("arvore-sensory-mode", sensoryMode);
   }, [sensoryMode]);
-
-  useEffect(() => {
-    if (sceneReady && !loadingQuotes && !emotionalSession.session.emotionBefore) setCheckInOpen(true);
-  }, [emotionalSession.session.emotionBefore, loadingQuotes, sceneReady]);
 
   useEffect(() => {
     return () => {
@@ -168,20 +151,6 @@ export function ExperienceRoot() {
     return () => window.clearTimeout(timeout);
   }, [reduceMotion, sceneReady]);
 
-  useEffect(() => {
-    if (introLocked || hudAutoCollapseDoneRef.current) {
-      return;
-    }
-
-    setHudExpanded(true);
-    const timeout = window.setTimeout(() => {
-      setHudExpanded(false);
-      hudAutoCollapseDoneRef.current = true;
-    }, 3600);
-
-    return () => window.clearTimeout(timeout);
-  }, [introLocked]);
-
   const loadAllQuotes = useCallback(async () => {
     setLoadingQuotes(true);
 
@@ -189,7 +158,7 @@ export function ExperienceRoot() {
       const payload = await fetchQuotesByTheme("all");
       setQuotes(payload.quotes);
     } catch {
-      // a cena continua utilizável mesmo sem rede; o painel avisa o usuário
+      // a cena continua utilizável mesmo sem rede
     } finally {
       setLoadingQuotes(false);
     }
@@ -240,14 +209,9 @@ export function ExperienceRoot() {
   }, [themeFilter]);
 
   const primaryActionLabel = themeFilter === "all" ? "Receber mensagem" : `Receber ${themeContextLabel.toLowerCase()}`;
-  const floatingHintLabel =
-    themeFilter === "all"
-      ? "Toque uma folha luminosa"
-      : `Toque uma folha de ${themeContextLabel.toLowerCase()}`;
 
-  const dismissIntro = useCallback(() => {
+  const markIntroSeen = useCallback(() => {
     window.localStorage.setItem(INTRO_STORAGE_KEY, "1");
-    setShowIntro(false);
   }, []);
 
   const isFavorite = activeQuote ? favorites.includes(activeQuote.id) : false;
@@ -287,18 +251,16 @@ export function ExperienceRoot() {
 
     playRandom();
     setFavoritesOpen(false);
-    setShowHint(false);
-    dismissIntro();
+    markIntroSeen();
     sceneApiRef.current?.pickRandomLeaf();
-  }, [dismissIntro, playRandom, visibleQuotes.length]);
+  }, [markIntroSeen, playRandom, visibleQuotes.length]);
 
   /** a folha se soltou da árvore: reserva a frase, mas só abre no pouso */
   const handleLeafPick = useCallback(
     (leafIndex: number) => {
       const quote = leafQuotes[leafIndex] ?? visibleQuotes[0] ?? null;
       setPendingQuote(quote);
-      setShowHint(false);
-      dismissIntro();
+      markIntroSeen();
       setFavoritesOpen(false);
       playClick();
 
@@ -311,7 +273,7 @@ export function ExperienceRoot() {
         });
       }
     },
-    [dismissIntro, leafQuotes, playClick, sessionId, themeFilter, visibleQuotes],
+    [leafQuotes, markIntroSeen, playClick, sessionId, themeFilter, visibleQuotes],
   );
 
   /** a folha pousou diante da câmera: agora sim mostramos a mensagem */
@@ -330,15 +292,21 @@ export function ExperienceRoot() {
     setReadLeafCount((n) => n + 1);
   }, []);
 
-  const completeCheckIn = useCallback((emotion: Emotion, intensity: number) => {
-    emotionalSession.checkIn(emotion, intensity);
-    setCheckInOpen(false);
-  }, [emotionalSession]);
+  const completeCheckIn = useCallback(
+    (emotion: Emotion, intensity: number) => {
+      emotionalSession.checkIn(emotion, intensity);
+      setCheckInOpen(false);
+    },
+    [emotionalSession],
+  );
 
-  const completeCheckOut = useCallback((emotion: Emotion, intensity: number) => {
-    emotionalSession.checkOut(emotion, intensity);
-    setCheckOutOpen(false);
-  }, [emotionalSession]);
+  const completeCheckOut = useCallback(
+    (emotion: Emotion, intensity: number) => {
+      emotionalSession.checkOut(emotion, intensity);
+      setCheckOutOpen(false);
+    },
+    [emotionalSession],
+  );
 
   const handleFavorite = useCallback(() => {
     if (!activeQuote || !sessionId) {
@@ -391,10 +359,9 @@ export function ExperienceRoot() {
       setPendingQuote(quote);
       setPanelOpen(true);
       setFavoritesOpen(false);
-      setShowHint(false);
-      dismissIntro();
+      markIntroSeen();
     },
-    [dismissIntro, setActiveQuote, setPanelOpen],
+    [markIntroSeen, setActiveQuote, setPanelOpen],
   );
 
   const handleThemeChange = useCallback(
@@ -405,14 +372,13 @@ export function ExperienceRoot() {
 
       playClick();
       setThemeFilter(nextTheme);
-      setShowHint(false);
-      dismissIntro();
+      markIntroSeen();
 
       if (sessionId) {
         void postInteraction({ sessionId, actionType: "theme_filter", theme: nextTheme });
       }
     },
-    [dismissIntro, playClick, sessionId, setThemeFilter, themeFilter],
+    [markIntroSeen, playClick, sessionId, setThemeFilter, themeFilter],
   );
 
   const handleHoverChange = useCallback(
@@ -421,18 +387,10 @@ export function ExperienceRoot() {
         return;
       }
 
-      setShowHint(false);
       const now = performance.now();
       if (now - hoverSoundCooldownRef.current > 550) {
         hoverSoundCooldownRef.current = now;
         playHover();
-      }
-
-      // tooltip de onboarding: aparece uma única vez no primeiro hover
-      if (!tooltipShownRef.current && window.localStorage.getItem(INTRO_STORAGE_KEY) !== "1") {
-        tooltipShownRef.current = true;
-        setShowHoverTooltip(true);
-        window.setTimeout(() => setShowHoverTooltip(false), 2400);
       }
     },
     [playHover],
@@ -445,11 +403,10 @@ export function ExperienceRoot() {
   const handleKeyboardLeafPick = useCallback(
     (index: number) => {
       setFavoritesOpen(false);
-      setShowHint(false);
-      dismissIntro();
+      markIntroSeen();
       sceneApiRef.current?.pickLeaf(index);
     },
-    [dismissIntro],
+    [markIntroSeen],
   );
 
   const regenerateTree = useCallback(() => {
@@ -457,14 +414,18 @@ export function ExperienceRoot() {
     setActiveQuote(null);
     setPendingQuote(null);
     setPanelOpen(false);
-    setShowHint(true);
     setReadLeafCount(0);
     setIsLeafReturning(false);
   }, [setActiveQuote, setPanelOpen]);
 
   const loadingOverlayVisible = loadingQuotes || !sceneReady || treeSeed === null;
   const completedActivities = emotionalSession.session.activities.filter((activity) => activity.completed).length;
-  const emotionalProfile = getEmotionalSceneProfile(emotionalSession.session.emotionBefore, emotionalSession.session.intensityBefore, completedActivities);
+  const emotionalProfile = getEmotionalSceneProfile(
+    emotionalSession.session.emotionBefore,
+    emotionalSession.session.intensityBefore,
+    completedActivities,
+  );
+  const barVisible = !panelOpen && !loadingOverlayVisible && !introLocked;
 
   return (
     <main
@@ -472,10 +433,9 @@ export function ExperienceRoot() {
       aria-busy={loadingOverlayVisible}
     >
       <h1 className="sr-only">Árvore das Emoções</h1>
-      <p className="sr-only" aria-live="polite">
-        Cada árvore é gerada do zero ao abrir a página. As folhas maiores e luminosas guardam
-        mensagens: toque uma delas, ou use o botão de receber mensagem para abrir uma frase sem
-        navegar na cena 3D. Escape fecha os painéis abertos.
+      <p className="sr-only">
+        Cada árvore é gerada do zero ao abrir a página. As folhas maiores e luminosas guardam mensagens: toque uma
+        delas, ou use o botão de receber mensagem na barra inferior. Escape fecha os painéis abertos.
       </p>
 
       {/*
@@ -534,317 +494,30 @@ export function ExperienceRoot() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.4 }}
-              className="absolute inset-0 bg-black/45 backdrop-blur-[2px]"
+              transition={{ duration: 0.45 }}
+              className="absolute inset-0 bg-[#060B12]/72 backdrop-blur-[3px]"
             />
           ) : null}
         </AnimatePresence>
       </div>
 
       {/*
-        Com a mensagem aberta o HUD sai de cena: a folha ocupa a tela inteira e
-        o painel do canto ficava por cima da lamina, competindo com o texto.
+        Abertura silenciosa: nenhuma mensagem, painel ou dica aparece ao iniciar.
+        A cena carrega sob um véu escuro e apenas o status invisível informa
+        leitores de tela.
       */}
-      <div
-        className={`pointer-events-none absolute inset-0 z-20 transition-opacity duration-300 ${
-          introLocked || panelOpen ? "opacity-0" : "opacity-100"
-        } ${panelOpen ? "invisible" : "visible"}`}
-      >
-        <div className="relative mx-auto h-full w-full max-w-[1240px] px-4 sm:px-6 lg:px-8">
-          <motion.div
-            initial={{ opacity: 0, x: -14, y: -8 }}
-            animate={{ opacity: 1, x: 0, y: 0 }}
-            transition={{ duration: 0.45, ease: "easeOut" }}
-            className={`pointer-events-none ${
-              isMobile
-                ? "absolute bottom-[max(5.5rem,calc(env(safe-area-inset-bottom)+5rem))] left-4"
-                : "absolute top-4 left-4 sm:top-6 sm:left-6 lg:top-8 lg:left-8"
-            }`}
-          >
-            {/*
-              Desktop: pílula recolhida no canto superior esquerdo.
-              Mobile: pílula recolhida no canto inferior esquerdo (alcance do
-              polegar), painel expandido sobe como bottom sheet.
-            */}
-            <div className="flex items-start gap-2">
-              <AnimatePresence initial={false}>
-                {hudExpanded ? null : (
-                  <motion.button
-                    key="hud-collapsed"
-                    initial={{ opacity: 0, scale: 0.96 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.96 }}
-                    transition={{ duration: 0.2 }}
-                    type="button"
-                    onClick={() => setHudExpanded(true)}
-                    aria-label="Abrir controles"
-                    aria-expanded={false}
-                    className="hud-pill pointer-events-auto inline-flex h-11 items-center gap-2 px-3.5 text-[11px] font-semibold text-[#D6E2F0] backdrop-blur-md transition hover:text-white"
-                  >
-                    <SlidersHorizontal className="h-4 w-4" aria-hidden />
-                    <span className="max-w-[16ch] truncate">{themeContextLabel}</span>
-                  </motion.button>
-                )}
-              </AnimatePresence>
-
-              <AnimatePresence initial={false}>
-                {hudExpanded ? (
-                  isMobile ? (
-                    /* ---- MOBILE: bottom sheet que sobe do rodapé ---- */
-                    <>
-                      {/* backdrop que fecha o sheet ao tocar fora */}
-                      <motion.div
-                        key="hud-backdrop"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        transition={{ duration: 0.2 }}
-                        className="pointer-events-auto fixed inset-0 bg-black/40"
-                        aria-hidden
-                        onClick={() => setHudExpanded(false)}
-                      />
-
-                      <motion.div
-                        key="mobile-hud-sheet"
-                        initial={{ y: "100%" }}
-                        animate={{ y: 0 }}
-                        exit={{ y: "100%" }}
-                        transition={{ duration: 0.38, ease: [0.22, 1, 0.36, 1] }}
-                        className="hud-panel pointer-events-auto fixed inset-x-0 bottom-0 z-40 overflow-hidden rounded-t-[28px] rounded-b-none pb-[env(safe-area-inset-bottom,0px)]"
-                      >
-                        {/* handle visual */}
-                        <div className="flex justify-center pb-1 pt-3" aria-hidden>
-                          <div className="h-1 w-12 rounded-full bg-white/22" />
-                        </div>
-
-                        <header className="flex items-start justify-between gap-3 px-5 pt-2 pb-1">
-                          <div>
-                            <p className="text-[9px] font-semibold tracking-[0.26em] uppercase text-[#8FA6BD]">
-                              Árvore das Emoções
-                            </p>
-                            <p className="mt-1 max-w-[34ch] text-[13px] leading-snug text-[#E7EEF7]">
-                              Uma árvore nova a cada visita. As folhas maiores guardam mensagens.
-                            </p>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={() => setHudExpanded(false)}
-                            aria-label="Recolher painel"
-                            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#93A8BE] transition hover:bg-white/10 hover:text-white"
-                          >
-                            <X className="h-4 w-4" aria-hidden />
-                          </button>
-                        </header>
-
-                        {showIntro ? (
-                          <ol className="mx-5 mt-2 space-y-1.5 text-[12px] leading-relaxed text-[#C7D6E6]/85">
-                            <li>Procure as {MESSAGE_LEAF_COUNT} folhas maiores, com brilho dourado.</li>
-                            <li>Toque em uma delas: ela se solta e traz a mensagem até você.</li>
-                            <li>Guarde as frases que quiser revisitar depois.</li>
-                          </ol>
-                        ) : null}
-
-                        <div className="hud-divider mx-5 mt-3" />
-
-                        <section className="px-5 pt-3">
-                          <div className="mb-2.5 flex items-baseline justify-between gap-2">
-                            <span className="text-[9px] font-semibold tracking-[0.22em] uppercase text-[#8FA6BD]">
-                              Tema
-                            </span>
-                            <span className="truncate text-[11px] text-white/55">{themeContextLabel}</span>
-                          </div>
-                          <ThemeFilter themes={THEMES} value={themeFilter} onChange={handleThemeChange} />
-                        </section>
-
-                        <div className="hud-divider mx-5 mt-3.5" />
-
-                        <footer className="flex items-center justify-between px-5 py-4">
-                          <button
-                            type="button"
-                            onClick={() => { setFavoritesOpen((c) => !c); setHudExpanded(false); }}
-                            className="inline-flex h-11 items-center gap-2 rounded-full px-3 text-[12px] font-medium text-[#C7D6E6] transition hover:bg-white/10 hover:text-white"
-                          >
-                            <Heart className="h-4 w-4" aria-hidden />
-                            Favoritas
-                            {favorites.length > 0 ? (
-                              <span className="rounded-full bg-white/12 px-1.5 py-px text-[11px] font-bold tabular-nums">
-                                {favorites.length}
-                              </span>
-                            ) : null}
-                          </button>
-
-                          <div className="flex items-center gap-2">
-                            {process.env.NEXT_PUBLIC_ENABLE_AUDIO === "1" && (
-                              <button
-                                type="button"
-                                onClick={toggleMute}
-                                aria-label={muted ? "Ativar som" : "Silenciar"}
-                                className="flex h-9 w-9 items-center justify-center rounded-full text-[#93A8BE] transition hover:bg-white/10 hover:text-white"
-                              >
-                                {muted ? <VolumeX className="h-4 w-4" aria-hidden /> : <Volume2 className="h-4 w-4" aria-hidden />}
-                              </button>
-                            )}
-                            <span className="text-[10px] tracking-[0.12em] text-white/35">
-                              {MESSAGE_LEAF_COUNT} folhas com mensagem
-                            </span>
-                          </div>
-                        </footer>
-                      </motion.div>
-                    </>
-                  ) : (
-                    /* ---- DESKTOP: painel no canto superior esquerdo (sem mudança) ---- */
-                    <motion.div
-                      key="corner-hud"
-                      initial={{ opacity: 0, x: -8, scale: 0.98 }}
-                      animate={{ opacity: 1, x: 0, scale: 1 }}
-                      exit={{ opacity: 0, x: -10, scale: 0.98 }}
-                      transition={{ duration: 0.24, ease: "easeOut" }}
-                      className="hud-panel pointer-events-auto w-[min(88vw,400px)] overflow-hidden"
-                    >
-                      <header className="flex items-start justify-between gap-3 px-4 pt-4">
-                        <div>
-                          <p className="text-[9px] font-semibold tracking-[0.26em] uppercase text-[#8FA6BD]">
-                            Árvore das Emoções
-                          </p>
-                          <p className="mt-1.5 max-w-[30ch] text-[13px] leading-snug text-[#E7EEF7]">
-                            Uma árvore nova a cada visita. As folhas maiores guardam mensagens.
-                          </p>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => setHudExpanded(false)}
-                          aria-label="Recolher painel"
-                          className="-mr-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#93A8BE] transition hover:bg-white/10 hover:text-white"
-                        >
-                          <ChevronRight className="h-4 w-4" />
-                        </button>
-                      </header>
-
-                      <div className="flex flex-wrap items-center gap-2 px-4 pt-3.5">
-                        <button
-                          type="button"
-                          onClick={requestRandomLeaf}
-                          className="inline-flex h-9 items-center gap-2 rounded-full bg-[#F2EFE8] px-4 text-[11px] font-bold tracking-[0.04em] text-[#1C1A17] shadow-[0_4px_16px_rgba(0,0,0,0.3)] transition hover:bg-white"
-                        >
-                          <Sparkles className="h-3.5 w-3.5" aria-hidden />
-                          {primaryActionLabel}
-                        </button>
-
-                        {showIntro ? (
-                          <button
-                            type="button"
-                            onClick={dismissIntro}
-                            className="h-9 rounded-full border border-white/15 px-3.5 text-[11px] font-medium text-white/75 transition hover:bg-white/10 hover:text-white"
-                          >
-                            Explorar
-                          </button>
-                        ) : null}
-                      </div>
-
-                      {showIntro ? (
-                        <ol className="mt-3.5 ml-4 space-y-1.5 px-4 text-[11px] leading-relaxed text-[#C7D6E6]/85">
-                          <li>Procure as {MESSAGE_LEAF_COUNT} folhas maiores, com brilho dourado.</li>
-                          <li>Toque em uma delas: ela se solta e traz a mensagem até você.</li>
-                          <li>Guarde as frases que quiser revisitar depois.</li>
-                        </ol>
-                      ) : null}
-
-                      <div className="hud-divider mx-4 mt-4" />
-
-                      <section className="px-4 pt-3">
-                        <div className="mb-2 flex items-baseline justify-between gap-2">
-                          <span className="text-[9px] font-semibold tracking-[0.22em] uppercase text-[#8FA6BD]">
-                            Tema
-                          </span>
-                          <span className="truncate text-[11px] text-white/55">{themeContextLabel}</span>
-                        </div>
-                        <ThemeFilter themes={THEMES} value={themeFilter} onChange={handleThemeChange} />
-                      </section>
-
-                      <div className="hud-divider mx-4 mt-3.5" />
-
-                      <footer className="flex items-center justify-between px-4 py-3">
-                        <button
-                          type="button"
-                          onClick={() => setFavoritesOpen((current) => !current)}
-                          className="inline-flex h-9 items-center gap-2 rounded-full px-2.5 text-[11px] font-medium text-[#C7D6E6] transition hover:bg-white/10 hover:text-white"
-                        >
-                          <Heart className="h-3.5 w-3.5" aria-hidden />
-                          Favoritas
-                          {favorites.length > 0 ? (
-                            <span className="rounded-full bg-white/12 px-1.5 py-px text-[10px] font-bold tabular-nums">
-                              {favorites.length}
-                            </span>
-                          ) : null}
-                        </button>
-
-                        <div className="flex items-center gap-1">
-                          {process.env.NEXT_PUBLIC_ENABLE_AUDIO === "1" && (
-                            <button
-                              type="button"
-                              onClick={toggleMute}
-                              aria-label={muted ? "Ativar som" : "Silenciar"}
-                              className="flex h-8 w-8 items-center justify-center rounded-full text-[#93A8BE] transition hover:bg-white/10 hover:text-white"
-                            >
-                              {muted ? <VolumeX className="h-3.5 w-3.5" aria-hidden /> : <Volume2 className="h-3.5 w-3.5" aria-hidden />}
-                            </button>
-                          )}
-                          <span className="text-[10px] tracking-[0.12em] text-white/35">
-                            {MESSAGE_LEAF_COUNT} folhas com mensagem
-                          </span>
-                        </div>
-                      </footer>
-                    </motion.div>
-                  )
-                ) : null}
-              </AnimatePresence>
-            </div>
-          </motion.div>
-
-          <AnimatePresence>
-            {!panelOpen && showHint && !loadingOverlayVisible ? (
-              <motion.div
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 6 }}
-                transition={{ duration: 0.3 }}
-                className="hud-badge pointer-events-none absolute bottom-28 left-1/2 -translate-x-1/2 px-5 py-2.5 text-[12px] tracking-[0.12em] uppercase text-[#DAE6F4] lg:bottom-24 lg:text-[11px] lg:tracking-[0.14em]"
-              >
-                {floatingHintLabel}
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-
-          {/* tooltip de onboarding: aparece no centro da tela no primeiro hover */}
-          <AnimatePresence>
-            {showHoverTooltip && !panelOpen ? (
-              <motion.div
-                initial={{ opacity: 0, scale: 0.92, y: 8 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 4 }}
-                transition={{ duration: 0.28, ease: "easeOut" }}
-                className="hud-badge pointer-events-none absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 px-5 py-3 text-[13px] font-semibold tracking-[0.08em] text-[#F5EED8]"
-              >
-                Toque para abrir
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-        </div>
-      </div>
-
       <AnimatePresence>
         {loadingOverlayVisible ? (
           <motion.div
-            initial={{ opacity: 0 }}
+            initial={{ opacity: 1 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center bg-[rgba(8,12,20,0.62)]"
+            transition={{ duration: 0.6, ease: "easeOut" }}
+            className="pointer-events-none absolute inset-0 z-30 bg-[#0A101B]"
           >
-            <p role="status" aria-live="assertive" className="text-xs tracking-[0.24em] uppercase text-[#D8E5F4]">
-              {loadingQuotes ? "Carregando mensagens..." : "Plantando a árvore..."}
-            </p>
+            <span role="status" aria-live="polite" className="sr-only">
+              Preparando a árvore
+            </span>
           </motion.div>
         ) : null}
       </AnimatePresence>
@@ -865,6 +538,7 @@ export function ExperienceRoot() {
         quote={activeQuote}
         open={panelOpen}
         isMobile={isMobile}
+        reduceMotion={reduceMotion}
         isFavorite={isFavorite}
         favoriteCount={favorites.length}
         favoriteFeedback={favoriteFeedback}
@@ -880,10 +554,38 @@ export function ExperienceRoot() {
         onOpenFavorites={() => setFavoritesOpen(true)}
       />
 
-      <EmotionalCheckIn open={checkInOpen} title="Como você está chegando aqui hoje?" onComplete={completeCheckIn} onSkip={() => setCheckInOpen(false)} />
-      <EmotionalCheckIn open={checkOutOpen} title="Como você está agora?" onComplete={completeCheckOut} onSkip={() => setCheckOutOpen(false)} />
-      <BreathingLeaf open={breathingOpen} reduceMotion={reduceMotion} onStart={() => emotionalSession.startActivity("breathing")} onComplete={(durationMs) => emotionalSession.addActivity({ type: "breathing", durationMs, completed: true })} onClose={() => setBreathingOpen(false)} />
-      {webglUnavailable ? <div role="alert" className="hud-panel fixed inset-x-4 top-4 z-[60] mx-auto max-w-md p-4 text-center"><p className="text-sm text-[#E7EEF7]">A floresta precisa de um instante para voltar.</p><button type="button" onClick={() => window.location.reload()} className="hud-btn-primary mt-3 px-4 text-sm font-semibold">Recarregar experiência</button></div> : null}
+      <EmotionalCheckIn
+        open={checkInOpen}
+        title="Como você está chegando aqui hoje?"
+        onComplete={completeCheckIn}
+        onSkip={() => setCheckInOpen(false)}
+      />
+      <EmotionalCheckIn
+        open={checkOutOpen}
+        title="Como você está agora?"
+        onComplete={completeCheckOut}
+        onSkip={() => setCheckOutOpen(false)}
+      />
+      <BreathingLeaf
+        open={breathingOpen}
+        reduceMotion={reduceMotion}
+        onStart={() => emotionalSession.startActivity("breathing")}
+        onComplete={(durationMs) => emotionalSession.addActivity({ type: "breathing", durationMs, completed: true })}
+        onClose={() => setBreathingOpen(false)}
+      />
+
+      {webglUnavailable ? (
+        <div role="alert" className="hud-panel fixed inset-x-4 top-4 z-[60] mx-auto max-w-md p-4 text-center">
+          <p className="text-sm text-[#E7EEF7]">A floresta precisa de um instante para voltar.</p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="hud-btn-primary mt-3 px-4 text-sm font-semibold"
+          >
+            Recarregar experiência
+          </button>
+        </div>
+      ) : null}
 
       <FavoritesDrawer
         open={favoritesOpen}
@@ -893,38 +595,28 @@ export function ExperienceRoot() {
         onRemove={handleRemoveFavorite}
       />
 
-      {!panelOpen ? (
-        <button
-          type="button"
-          onClick={regenerateTree}
-          aria-label="Gerar uma nova árvore"
-          className="hud-pill pointer-events-auto absolute top-4 right-4 z-30 flex h-11 items-center gap-2 px-4 text-[11px] font-semibold text-[#D6E2F0] backdrop-blur-md transition hover:text-white sm:top-6 sm:right-6"
-        >
-          <RefreshCw className="h-3.5 w-3.5" aria-hidden />
-          <span className="hidden sm:inline">Nova árvore</span>
-        </button>
-      ) : null}
-
-      {!panelOpen && !loadingOverlayVisible ? <div className="absolute right-4 bottom-[max(5.5rem,env(safe-area-inset-bottom))] z-30 flex flex-col items-end gap-2 sm:right-6 sm:bottom-6"><button type="button" onClick={() => setBreathingOpen(true)} className="hud-pill h-11 px-4 text-[11px] font-semibold text-[#D6E2F0]">Respirar com a folha</button><button type="button" onClick={() => setCheckOutOpen(true)} className="hud-pill h-11 px-4 text-[11px] font-semibold text-[#D6E2F0]">Como estou agora?</button><label className="hud-pill flex h-10 items-center gap-2 px-3 text-[10px] text-[#D6E2F0]">Sensações<select value={sensoryMode} onChange={(event) => setSensoryMode(event.target.value as SensoryMode)} aria-label="Modo sensorial" className="bg-transparent text-[11px] text-white outline-none"><option value="default">Completo</option><option value="calm">Calmo</option><option value="minimal">Mínimo</option></select></label></div> : null}
-
-      {/*
-        FAB de ação principal em mobile: posicionado no centro-inferior,
-        ao alcance do polegar. h-14 (56 px) e sombra mais expressiva
-        para comunicar claramente que é o botão principal.
-      */}
-      {isMobile && !panelOpen ? (
-        <motion.button
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          whileTap={{ scale: 0.96 }}
-          type="button"
-          onClick={requestRandomLeaf}
-          className="pointer-events-auto fixed bottom-[max(1.5rem,env(safe-area-inset-bottom))] left-1/2 z-30 flex h-14 -translate-x-1/2 items-center gap-2.5 rounded-full bg-[#F2EFE8] px-6 text-[13px] font-bold text-[#1C1A17] shadow-[0_12px_36px_rgba(0,0,0,0.55),0_2px_8px_rgba(0,0,0,0.3)]"
-        >
-          <Sparkles className="h-4 w-4" aria-hidden />
-          {primaryActionLabel}
-        </motion.button>
-      ) : null}
+      <AnimatePresence>
+        {barVisible ? (
+          <BottomActionBar
+            primaryLabel={primaryActionLabel}
+            onPrimary={requestRandomLeaf}
+            themeValue={themeFilter}
+            onThemeChange={handleThemeChange}
+            favoriteCount={favorites.length}
+            favoritesOpen={favoritesOpen}
+            onOpenFavorites={() => setFavoritesOpen((current) => !current)}
+            onRegenerate={regenerateTree}
+            onBreathing={() => setBreathingOpen(true)}
+            onCheckIn={() => setCheckInOpen(true)}
+            onCheckOut={() => setCheckOutOpen(true)}
+            sensoryMode={sensoryMode}
+            onSensoryMode={setSensoryMode}
+            audioEnabled={process.env.NEXT_PUBLIC_ENABLE_AUDIO === "1"}
+            muted={muted}
+            onToggleMute={toggleMute}
+          />
+        ) : null}
+      </AnimatePresence>
     </main>
   );
 }

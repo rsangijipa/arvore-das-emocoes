@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useDragControls } from "motion/react";
 import { Heart, Trash2, X } from "lucide-react";
 import { useRef } from "react";
 
+import { TAP_BUTTON, TAP_LIST_ITEM } from "@/lib/utils/spring";
 import { themeLabel } from "@/data/labels";
 import type { Quote } from "@/types/quote";
 
@@ -78,14 +79,15 @@ export function FavoritesDrawer({ open, quotes, onClose, onSelect, onRemove }: F
               </div>
 
               {/* botão de fechar: 44×44 px mínimo */}
-              <button
+              <motion.button
+                {...TAP_BUTTON}
                 type="button"
                 onClick={onClose}
-                className="hud-pill flex h-11 w-11 items-center justify-center text-[#DCE8F5] transition"
+                className="hud-pill flex h-11 w-11 items-center justify-center text-[#DCE8F5]"
                 aria-label="Fechar favoritas"
               >
                 <X className="h-4 w-4" aria-hidden />
-              </button>
+              </motion.button>
             </div>
 
             <div className="hud-divider mx-5 shrink-0" />
@@ -106,7 +108,8 @@ export function FavoritesDrawer({ open, quotes, onClose, onSelect, onRemove }: F
                     key={quote.id}
                     className="group relative flex items-stretch gap-1"
                   >
-                    <button
+                    <motion.button
+                      {...TAP_LIST_ITEM}
                       type="button"
                       onClick={() => onSelect(quote)}
                       className="hud-list-item min-w-0 flex-1 px-4 py-3.5 text-left"
@@ -115,7 +118,7 @@ export function FavoritesDrawer({ open, quotes, onClose, onSelect, onRemove }: F
                         {themeLabel(quote.theme)}
                       </p>
                       <p className="mt-1 text-sm leading-relaxed text-[#F2F6FC]">{quote.text}</p>
-                    </button>
+                    </motion.button>
 
                     {/*
                       Botão de remoção:
@@ -123,7 +126,8 @@ export function FavoritesDrawer({ open, quotes, onClose, onSelect, onRemove }: F
                       — aparece no hover em mouse (pointer: fine)
                       — alvo generoso: 44×44 px
                     */}
-                    <button
+                    <motion.button
+                      {...TAP_BUTTON}
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -133,7 +137,7 @@ export function FavoritesDrawer({ open, quotes, onClose, onSelect, onRemove }: F
                       className="remove-btn shrink-0 self-center rounded-full p-3 text-[#6A8099] transition hover:bg-white/10 hover:text-[#D9B4A8] focus-visible:opacity-100"
                     >
                       <Trash2 className="h-4 w-4" aria-hidden />
-                    </button>
+                    </motion.button>
                   </div>
                 ))
               )}
