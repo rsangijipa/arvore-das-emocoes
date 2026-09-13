@@ -5,11 +5,14 @@ import {
   Check,
   Heart,
   HeartPulse,
+  Moon,
   Palette,
   RefreshCw,
   SlidersHorizontal,
   Smile,
   Sparkles,
+  Sun,
+  Sunset,
   Volume2,
   VolumeX,
   Wind,
@@ -21,8 +24,9 @@ import { THEMES } from "@/data/themes";
 import { SPRING_FAST, TAP_BUTTON, TAP_CHIP } from "@/lib/utils/spring";
 import type { SensoryMode } from "@/types/emotional-session";
 import type { ThemeFilter as ThemeFilterValue } from "@/types/quote";
+import type { SceneVariant } from "@/lib/theme/scene-variant";
 
-type MenuId = "theme" | "emotions" | "sensations";
+type MenuId = "theme" | "emotions" | "sensations" | "daytime";
 
 type BottomActionBarProps = {
   primaryLabel: string;
@@ -38,6 +42,8 @@ type BottomActionBarProps = {
   onCheckOut: () => void;
   sensoryMode: SensoryMode;
   onSensoryMode: (mode: SensoryMode) => void;
+  sceneVariant: SceneVariant;
+  onSceneVariantChange: (variant: SceneVariant) => void;
   audioEnabled: boolean;
   muted: boolean;
   onToggleMute: () => void;
@@ -50,6 +56,12 @@ const SENSORY_OPTIONS: { value: SensoryMode; label: string; description: string 
   { value: "default", label: "Completo", description: "Vento, partículas e brilho das folhas" },
   { value: "calm", label: "Calmo", description: "Movimento suavizado, cena mais serena" },
   { value: "minimal", label: "Mínimo", description: "Cena estática, sem partículas" },
+];
+
+const DAYTIME_OPTIONS: { value: SceneVariant; label: string; description: string; icon: typeof Sun }[] = [
+  { value: "morning", label: "Manhã", description: "Luz suave e horizonte claro", icon: Sun },
+  { value: "evening", label: "Tarde", description: "Céu dourado e atmosfera calorosa", icon: Sunset },
+  { value: "night", label: "Noite", description: "Céu estrelado e folhas luminosas", icon: Moon },
 ];
 
 export function BottomActionBar({
@@ -66,6 +78,8 @@ export function BottomActionBar({
   onCheckOut,
   sensoryMode,
   onSensoryMode,
+  sceneVariant,
+  onSceneVariantChange,
   audioEnabled,
   muted,
   onToggleMute,
@@ -203,6 +217,58 @@ export function BottomActionBar({
                     </div>
                   </>
                 ) : null}
+
+                {menu === "daytime" ? (
+                  <>
+                    <p className="mb-2.5 text-[9px] font-semibold tracking-[0.22em] uppercase text-[#8FA6BD]">
+                      Período do dia
+                    </p>
+                    <div role="radiogroup" aria-label="Período do dia" className="flex flex-col gap-1.5">
+                      {DAYTIME_OPTIONS.map((option) => {
+                        const Icon = option.icon;
+                        const active = sceneVariant === option.value;
+                        return (
+                          <motion.button
+                            key={option.value}
+                            {...TAP_CHIP}
+                            type="button"
+                            role="radio"
+                            aria-checked={active}
+                            onClick={() => {
+                              onSceneVariantChange(option.value);
+                              setMenu(null);
+                            }}
+                            className={`flex items-center justify-between gap-3 rounded-2xl border px-3.5 py-2.5 text-left transition-colors ${
+                              active
+                                ? "border-[#F0CF8E]/50 bg-white/[0.13]"
+                                : "border-white/10 bg-white/[0.04] hover:bg-white/10"
+                            }`}
+                          >
+                            <div className="flex items-center gap-3">
+                              <Icon className={`h-4 w-4 ${active ? "text-[#F0CF8E]" : "text-[#9FB4C8]"}`} aria-hidden />
+                              <span>
+                                <span className="block text-[13px] font-semibold text-[#E7EEF7]">{option.label}</span>
+                                <span className="block text-[11px] leading-snug text-[#9FB4C8]">{option.description}</span>
+                              </span>
+                            </div>
+                            <AnimatePresence>
+                              {active ? (
+                                <motion.span
+                                  initial={{ opacity: 0, scale: 0.5 }}
+                                  animate={{ opacity: 1, scale: 1 }}
+                                  exit={{ opacity: 0, scale: 0.5 }}
+                                  transition={SPRING_FAST}
+                                >
+                                  <Check className="h-4 w-4 text-[#F0CF8E]" aria-hidden />
+                                </motion.span>
+                              ) : null}
+                            </AnimatePresence>
+                          </motion.button>
+                        );
+                      })}
+                    </div>
+                  </>
+                ) : null}
               </motion.div>
             ) : null}
           </AnimatePresence>
@@ -265,6 +331,21 @@ export function BottomActionBar({
                 active={menu === "sensations"}
                 expanded={menu === "sensations"}
                 dot={sensoryMode !== "default"}
+              />
+              <BarIconButton
+                icon={
+                  sceneVariant === "night" ? (
+                    <Moon className="h-[18px] w-[18px]" aria-hidden />
+                  ) : sceneVariant === "evening" ? (
+                    <Sunset className="h-[18px] w-[18px]" aria-hidden />
+                  ) : (
+                    <Sun className="h-[18px] w-[18px]" aria-hidden />
+                  )
+                }
+                label="Alterar período do dia (Manhã, Tarde, Noite)"
+                onClick={() => toggleMenu("daytime")}
+                active={menu === "daytime"}
+                expanded={menu === "daytime"}
               />
               {audioEnabled ? (
                 <BarIconButton

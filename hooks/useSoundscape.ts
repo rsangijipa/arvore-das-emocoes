@@ -7,7 +7,7 @@ import { soundscape } from "@/lib/audio/soundscape";
 const MUTE_STORAGE_KEY = "arvore:audio:muted";
 
 export function useSoundscape(enabled = true) {
-  const audioEnabled = enabled && process.env.NEXT_PUBLIC_ENABLE_AUDIO === "1";
+  const audioEnabled = enabled;
 
   // lê a preferência de mute do localStorage (default: não mutado)
   const [muted, setMuted] = useState<boolean>(() => {
@@ -40,6 +40,7 @@ export function useSoundscape(enabled = true) {
   // sincroniza mute com o soundscape quando o estado muda
   useEffect(() => {
     if (!audioEnabled) return;
+    soundscape.setMuted(muted);
     if (muted) {
       soundscape.stopAll();
     }

@@ -120,21 +120,21 @@ export function LeafSvg({ id, className }: LeafSvgProps) {
 
         {/* clareamento sob o texto: a mensagem e escura, a lamina abre caminho */}
         <radialGradient id={`${id}-page`} cx="0.5" cy="0.5" r="0.5">
-          <stop offset="0" stopColor={palette.glow} stopOpacity="0.9" />
-          <stop offset="0.6" stopColor={palette.glow} stopOpacity="0.55" />
-          <stop offset="1" stopColor={palette.glow} stopOpacity="0" />
+          <stop offset="0" stopColor={palette.glow} stopOpacity="0.96" />
+          <stop offset="0.65" stopColor={palette.light} stopOpacity="0.72" />
+          <stop offset="1" stopColor={palette.base} stopOpacity="0.05" />
         </radialGradient>
 
         <filter id={`${id}-shadow`} x="-8%" y="-24%" width="118%" height="156%">
-          <feDropShadow dx="0" dy="18" stdDeviation="20" floodColor="#0A1207" floodOpacity="0.42" />
+          <feDropShadow dx="0" dy="24" stdDeviation="28" floodColor="#060C04" floodOpacity="0.56" />
         </filter>
 
-        {/* grao: fractalNoise em soft-light da a lamina a aspereza do papel */}
+        {/* grao: fractalNoise em soft-light da a lamina a aspereza do papel pergaminho */}
         <filter id={`${id}-grain`} x="166" y="79" width="1398" height="588" filterUnits="userSpaceOnUse">
-          <feTurbulence type="fractalNoise" baseFrequency="0.75" numOctaves="2" seed={seed % 100} result="noise" />
+          <feTurbulence type="fractalNoise" baseFrequency="0.65" numOctaves="3" seed={seed % 100} result="noise" />
           <feColorMatrix in="noise" type="saturate" values="0" result="mono" />
           <feComponentTransfer in="mono" result="softNoise">
-            <feFuncA type="table" tableValues="0 0.07" />
+            <feFuncA type="table" tableValues="0 0.11" />
           </feComponentTransfer>
           <feBlend in="SourceGraphic" in2="softNoise" mode="soft-light" />
         </filter>
@@ -144,17 +144,34 @@ export function LeafSvg({ id, className }: LeafSvgProps) {
         </clipPath>
       </defs>
 
-      {/* peciolo */}
+      {/* peciolo com textura e anel de transição */}
       <path
         d="M80 388C122 377 171 367 232 362"
         stroke={`url(#${id}-stem)`}
-        strokeWidth="18"
+        strokeWidth="20"
         strokeLinecap="round"
+        fill="none"
+      />
+      <path
+        d="M90 386C130 376 172 367 220 363"
+        stroke={palette.glow}
+        strokeWidth="3.5"
+        strokeLinecap="round"
+        strokeOpacity="0.45"
         fill="none"
       />
 
       <g filter={`url(#${id}-shadow)`}>
-        <path d={LEAF_OUTLINE} fill={`url(#${id}-blade)`} stroke={`url(#${id}-edge)`} strokeWidth="4.5" />
+        <path d={LEAF_OUTLINE} fill={`url(#${id}-blade)`} stroke={`url(#${id}-edge)`} strokeWidth="5" />
+
+        {/* filete dourado/luz de borda interna */}
+        <path
+          d={LEAF_OUTLINE}
+          fill="none"
+          stroke={palette.goldAccent ?? palette.glow}
+          strokeWidth="1.6"
+          strokeOpacity="0.5"
+        />
 
         <g clipPath={`url(#${id}-clip)`} filter={`url(#${id}-grain)`}>
           <rect x="166" y="79" width="1398" height="588" fill={`url(#${id}-inner)`} />
@@ -163,12 +180,12 @@ export function LeafSvg({ id, className }: LeafSvgProps) {
           <path
             d="M275 273C479 170 759 162 1055 218C886 208 675 235 474 327C404 360 315 346 275 273Z"
             fill={palette.glow}
-            opacity="0.34"
+            opacity="0.44"
           />
           <path
             d="M278 470C548 564 889 572 1218 489C1070 524 897 545 716 543C545 541 397 514 278 470Z"
             fill={palette.edge}
-            opacity="0.12"
+            opacity="0.16"
           />
 
           {/* pigmentacao irregular — dentro do clipPath da lâmina para não transbordar */}
@@ -191,16 +208,16 @@ export function LeafSvg({ id, className }: LeafSvgProps) {
           <path
             d="M222 348C651 316 1114 328 1526 393"
             stroke={palette.edge}
-            strokeOpacity="0.12"
-            strokeWidth="42"
+            strokeOpacity="0.14"
+            strokeWidth="44"
             strokeLinecap="round"
             fill="none"
           />
           <path
             d="M220 357C645 370 1114 386 1526 398"
             stroke={palette.glow}
-            strokeOpacity="0.5"
-            strokeWidth="20"
+            strokeOpacity="0.58"
+            strokeWidth="24"
             strokeLinecap="round"
             fill="none"
           />
@@ -214,7 +231,7 @@ export function LeafSvg({ id, className }: LeafSvgProps) {
             ))}
           </g>
 
-          <g stroke={`url(#${id}-veinlet)`} strokeLinecap="round" fill="none" strokeWidth="1.7">
+          <g stroke={`url(#${id}-veinlet)`} strokeLinecap="round" fill="none" strokeWidth="2.2">
             {LEAF_VEINLETS_UPPER.map((path, index) => (
               <path key={`nu-${index}`} d={path} />
             ))}
@@ -223,30 +240,30 @@ export function LeafSvg({ id, className }: LeafSvgProps) {
             ))}
           </g>
 
-          <g stroke={palette.vein} strokeOpacity="0.2" strokeLinecap="round" fill="none" strokeWidth="1.1">
+          <g stroke={palette.vein} strokeOpacity="0.28" strokeLinecap="round" fill="none" strokeWidth="1.3">
             {LEAF_VEIN_MESH.map((path, index) => (
               <path key={`mesh-${index}`} d={path} />
             ))}
           </g>
 
-          {/*
-            A nervura central entra ANTES da pagina da mensagem: a lamina
-            clareia por cima dela no miolo, entao o traco atravessa a folha
-            inteira mas nao corta as linhas do texto ao meio.
-          */}
-          <path d={LEAF_MIDRIB} stroke={`url(#${id}-midrib)`} strokeWidth="12" strokeLinecap="round" fill="none" />
+          {/* nervura central majestosa com filete duplo */}
+          <path d={LEAF_MIDRIB} stroke={`url(#${id}-midrib)`} strokeWidth="14" strokeLinecap="round" fill="none" />
           <path
             d={LEAF_MIDRIB_HIGHLIGHT}
             stroke={palette.glow}
-            strokeOpacity="0.55"
-            strokeWidth="2.3"
+            strokeOpacity="0.75"
+            strokeWidth="3.2"
             strokeLinecap="round"
             fill="none"
           />
 
-          {/* pagina da mensagem: clareia o centro sem apagar as nervuras */}
-          <ellipse cx="860" cy="368" rx="470" ry="185" fill={`url(#${id}-page)`} />
-          <ellipse cx="860" cy="368" rx="360" ry="120" fill={`url(#${id}-page)`} opacity="0.75" />
+          {/* pagina da mensagem iluminada suavemente */}
+          <ellipse cx="860" cy="368" rx="490" ry="195" fill={`url(#${id}-page)`} />
+          <ellipse cx="860" cy="368" rx="380" ry="130" fill={`url(#${id}-page)`} opacity="0.85" />
+
+          {/* ornamentos botânicos discretos nas extremidades da página */}
+          <circle cx="430" cy="358" r="4.5" fill={palette.vein} opacity="0.32" />
+          <circle cx="1290" cy="378" r="4.5" fill={palette.vein} opacity="0.32" />
         </g>
       </g>
     </svg>

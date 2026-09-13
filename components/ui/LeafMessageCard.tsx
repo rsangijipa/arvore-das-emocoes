@@ -165,51 +165,53 @@ export function LeafMessageCard({
             >
               <span
                 aria-hidden
-                className="absolute inset-x-[-12%] inset-y-[-14%] rounded-full bg-[#FFF9E9]/18 blur-[38px]"
+                className="absolute inset-x-[-15%] inset-y-[-18%] rounded-full bg-[#FFFDF5]/28 blur-[44px]"
               />
 
               <figcaption
-                className="relative mb-3 text-[10.5px] font-bold tracking-[0.28em] uppercase"
-                style={{ color: ink, opacity: 0.58 }}
+                className="relative mb-3.5 flex items-center justify-center gap-2 text-[10.5px] font-bold tracking-[0.32em] uppercase"
+                style={{ color: ink, opacity: 0.65 }}
               >
+                <span className="h-px w-6 bg-current opacity-30" />
                 {LEAF_CARD_FOUND_LABEL}
+                <span className="h-px w-6 bg-current opacity-30" />
               </figcaption>
 
               <motion.blockquote
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.42, delay: 0.55, ease: "easeOut" }}
-                className="relative"
+                className="relative px-2"
                 style={{
                   color: ink,
                   fontFamily: font.family,
                   fontWeight: font.weight,
                   letterSpacing: font.tracking,
                   fontSize: isMobile
-                    ? `calc(clamp(1.12rem, 4.7vw, 1.82rem) * ${font.size})`
-                    : `calc(clamp(1.45rem, 2.35vw, 2.5rem) * ${font.size})`,
-                  lineHeight: 1.34,
+                    ? `calc(clamp(1.18rem, 4.8vw, 1.9rem) * ${font.size})`
+                    : `calc(clamp(1.5rem, 2.45vw, 2.65rem) * ${font.size})`,
+                  lineHeight: 1.38,
                   textWrap: "balance",
-                  textShadow: "0 1px 0 rgba(255,255,255,0.48)",
+                  textShadow: "0 1px 1px rgba(255,255,255,0.72)",
                 }}
               >
-                {quote.text}
+                “{quote.text}”
               </motion.blockquote>
 
-              <div className="relative mt-5 flex flex-wrap items-center justify-center gap-1.5 text-[9px] font-semibold tracking-[0.18em] uppercase">
+              <div className="relative mt-5 flex flex-wrap items-center justify-center gap-2 text-[9.5px] font-semibold tracking-[0.18em] uppercase">
                 {[themeLabel(quote.theme), toneLabel(quote.tone), quote.author]
                   .filter((label): label is string => Boolean(label))
                   .map((label) => (
                     <motion.span
                       key={label}
                       initial={{ opacity: 0, y: 6 }}
-                      animate={{ opacity: 0.76, y: 0 }}
+                      animate={{ opacity: 0.88, y: 0 }}
                       transition={{ duration: 0.3, delay: 0.72, ease: "easeOut" }}
-                      className="rounded-full px-2.5 py-1"
+                      className="rounded-full px-3 py-1 shadow-sm backdrop-blur-[2px]"
                       style={{
                         color: ink,
-                        border: `1px solid color-mix(in srgb, ${ink} 26%, transparent)`,
-                        background: "rgba(255,255,255,0.24)",
+                        border: `1px solid color-mix(in srgb, ${ink} 34%, transparent)`,
+                        background: "rgba(255,255,255,0.38)",
                       }}
                     >
                       {label}

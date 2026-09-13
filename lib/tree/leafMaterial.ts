@@ -1,5 +1,7 @@
 import * as THREE from "three";
 
+import { WIND_FIELD_GLSL } from "@/lib/tree/windSway";
+
 /**
  * Material de folha.
  *
@@ -22,6 +24,7 @@ export type LeafMaterialUniforms = {
   uSubColor: { value: THREE.Color };
   uSubIntensity: { value: number };
   uLeafLength: { value: number };
+  uSway: { value: number };
 };
 
 export type LeafMaterialResult = {
@@ -62,6 +65,7 @@ export function createLeafMaterial(options: {
     uSubColor: { value: new THREE.Color(options.subsurfaceColor) },
     uSubIntensity: { value: options.subsurfaceIntensity },
     uLeafLength: { value: 0.34 },
+    uSway: { value: 0 },
   };
 
   material.onBeforeCompile = (shader) => {
@@ -71,10 +75,10 @@ export function createLeafMaterial(options: {
       .replace(
         "#include <common>",
         `#include <common>
-        uniform float uTime;
         uniform float uWind;
         uniform float uWindSpeed;
         uniform float uLeafLength;
+        ${WIND_FIELD_GLSL}
         #ifdef USE_INSTANCING
           attribute float aPhase;
           attribute float aStiffness;
@@ -102,7 +106,12 @@ export function createLeafMaterial(options: {
 
         transformed.x += sway * windAmount * gust;
         transformed.z += flutter * windAmount * 0.7 * gust;
-        transformed.y -= abs(sway) * windAmount * 0.18;`,
+        transformed.y -= abs(sway) * windAmount * 0.18;
+
+        #ifdef USE_INSTANCING
+          vec3 leafWorldAnchor = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+          transformed += inverse(mat3(instanceMatrix)) * windField(leafWorldAnchor);
+        #endif`,
       );
 
     shader.fragmentShader = shader.fragmentShader

@@ -170,18 +170,19 @@ export function buildLeafPalette(seed: number) {
   return {
     hue,
     saturation,
-    glow: hsl(hue + 6, saturation + 12, 89 + lift * 0.4),
-    light: hsl(hue + 3, saturation + 6, 82 + lift * 0.5),
-    base: hsl(hue, saturation, 74 + lift * 0.5),
-    mid: hsl(hue - 2, saturation, 66 + lift * 0.4),
-    deep: hsl(hue - 4, saturation + 2, 55 + lift * 0.3),
-    edge: hsl(hue - 7, saturation + 4, 40),
-    vein: hsl(hue - 8, saturation + 2, 36),
-    veinSoft: hsl(hue - 8, saturation, 44),
-    stem: hsl(hue - 10, saturation + 2, 34),
-    /** tinta do texto: mesma familia da folha, so que quase preta */
-    ink: hsl(hue - 12, saturation - 6, 15),
-    blotch: hsl(hue - 5, saturation, 50),
+    glow: hsl(hue + 6, saturation + 14, 91 + lift * 0.4),
+    light: hsl(hue + 3, saturation + 8, 85 + lift * 0.5),
+    base: hsl(hue, saturation, 76 + lift * 0.5),
+    mid: hsl(hue - 2, saturation + 2, 67 + lift * 0.4),
+    deep: hsl(hue - 4, saturation + 4, 54 + lift * 0.3),
+    edge: hsl(hue - 7, saturation + 6, 38),
+    vein: hsl(hue - 8, saturation + 5, 32),
+    veinSoft: hsl(hue - 8, saturation + 3, 42),
+    stem: hsl(hue - 10, saturation + 4, 30),
+    /** tinta do texto: contraste aprimorado e nitidez superior */
+    ink: hsl(hue - 14, saturation - 10, 12),
+    blotch: hsl(hue - 5, saturation + 2, 48),
+    goldAccent: hsl(hue + 8, saturation + 28, 62),
   };
 }
 

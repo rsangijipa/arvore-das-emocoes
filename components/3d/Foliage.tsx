@@ -9,6 +9,7 @@ import { createLeafDetailTexture, messageLeafTone } from "@/lib/tree/leafArtwork
 import { createLeafVariants } from "@/lib/tree/leafGeometry";
 import { createLeafMaterial, updateSunDirection } from "@/lib/tree/leafMaterial";
 import { SUN_POSITION } from "@/lib/theme/scene-tokens";
+import { BRANCH_SWAY_GAIN, windFieldAt } from "@/lib/tree/windSway";
 
 type FoliageProps = {
   leaves: LeafNode[];
@@ -362,14 +363,20 @@ export function Foliage({
     };
   }, [haloTexture, materials]);
 
+  const haloOffsetScratch = useMemo(() => new THREE.Vector3(), []);
+
   useFrame(({ clock }) => {
     const time = clock.elapsedTime;
     const wind = reduceMotion ? windStrength * 0.35 : windStrength;
+    const sway = reduceMotion ? 0 : windStrength * BRANCH_SWAY_GAIN;
 
     commonMaterial.uniforms.uTime.value = time;
     commonMaterial.uniforms.uWind.value = wind;
+    commonMaterial.uniforms.uSway.value = sway;
+
     messageMaterial.uniforms.uTime.value = time;
     messageMaterial.uniforms.uWind.value = wind * 0.55;
+    messageMaterial.uniforms.uSway.value = sway;
 
     updateSunDirection(commonMaterial.uniforms.uSunDirView.value, SUN_POSITION, camera);
     messageMaterial.uniforms.uSunDirView.value.copy(commonMaterial.uniforms.uSunDirView.value);
@@ -381,9 +388,25 @@ export function Foliage({
     const haloBase = 0.5 + leafEmissiveBoost * 0.6;
     for (let index = 0; index < haloRefs.current.length; index += 1) {
       const sprite = haloRefs.current[index];
-      if (!sprite) {
+      const leaf = messageLeaves[index];
+      if (!sprite || !leaf) {
         continue;
       }
+
+      // desloca o halo junto com o galho que balança no vento
+      windFieldAt(
+        leaf.position.x,
+        leaf.position.y,
+        leaf.position.z,
+        time,
+        sway,
+        haloOffsetScratch,
+      );
+      sprite.position.set(
+        leaf.position.x + leaf.direction.x * 0.12 + haloOffsetScratch.x,
+        leaf.position.y + leaf.direction.y * 0.12 + haloOffsetScratch.y,
+        leaf.position.z + leaf.direction.z * 0.12 + haloOffsetScratch.z,
+      );
 
       const hidden = hiddenMessageIndex === index;
       const pulse = 0.82 + Math.sin(time * 1.15 + index * 1.9) * 0.18;

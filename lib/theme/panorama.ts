@@ -3,8 +3,13 @@ import * as THREE from "three";
 import type { SceneVariant } from "@/lib/theme/scene-variant";
 
 /**
- * Panorama equirretangular 360 graus desenhado em SVG.
- * Aceita uma variante sazonal para ajustar o gradiente do céu.
+ * Panorama equirretangular 360 graus desenhado em SVG vetorial de alta definicao.
+ *
+ * Elementos por periodo:
+ * - Manha: sol suave a leste, nevoa matinal, montanhas em degradê azul-verde, nuvens leves, bando de passaros.
+ * - Dia: horizonte limpo, céu azul profundo, nuvens fofas de bom tempo, relevo verde vibrante.
+ * - Tarde: pôr do sol dourado/laranja com disco solar difuso, raios de luz, nuvens alaranjadas e silhuetas quentes.
+ * - Noite: lua crescente brilhante com halo translúcido, 320 estrelas de tamanhos/opacidades variadas, colinas escuras sob luz prateada.
  */
 
 const VIEW_WIDTH = 4096;
@@ -19,28 +24,28 @@ export const GRASS_FAR_COLOR = "#8FC05A";
 /** Paletas de céu por variante */
 const SKY_PALETTES: Record<SceneVariant, { top: string; mid: string; low: string; horizon: string }> = {
   morning: {
-    top: "#1A5FA8",
-    mid: "#4A9AD4",
-    low: "#A8CDE8",
-    horizon: "#D8EAF5",
+    top: "#18589E",
+    mid: "#4593CE",
+    low: "#A4CAE8",
+    horizon: "#D6E8F4",
   },
   day: {
-    top: "#2A7FCE",
-    mid: "#3E92D8",
-    low: "#93C9EF",
+    top: "#2274C4",
+    mid: "#398CCE",
+    low: "#8EC7ED",
     horizon: HORIZON_COLOR,
   },
   evening: {
-    top: "#8A3A20",
-    mid: "#D06A28",
-    low: "#F0A848",
+    top: "#5E2522",
+    mid: "#B85420",
+    low: "#E8923A",
     horizon: "#F5C878",
   },
   night: {
-    top: "#060C18",
-    mid: "#0E1830",
-    low: "#1A2848",
-    horizon: "#1C2E40",
+    top: "#040814",
+    mid: "#0B1528",
+    low: "#15243E",
+    horizon: "#192838",
   },
 };
 
@@ -51,12 +56,7 @@ type Cloud = {
   opacity: number;
 };
 
-/**
- * Nuvens baixas de bom tempo. Em equirretangular, y = 1024 e o horizonte e cada
- * 11.4 px equivalem a 1 grau de elevacao — por isso elas ficam entre 845 e 985:
- * a faixa que a camera realmente enquadra ao olhar para a arvore.
- */
-const CLOUDS: Cloud[] = [
+const CLOUDS_DAY: Cloud[] = [
   { x: 210, y: 902, scale: 0.62, opacity: 0.95 },
   { x: 640, y: 958, scale: 0.34, opacity: 0.78 },
   { x: 1180, y: 922, scale: 0.48, opacity: 0.88 },
@@ -69,7 +69,16 @@ const CLOUDS: Cloud[] = [
   { x: 4040, y: 948, scale: 0.38, opacity: 0.74 },
 ];
 
-/** silhueta de uma nuvem baixa de bom tempo: base reta, topo em bolhas */
+const CLOUDS_EVENING: Cloud[] = [
+  { x: 320, y: 920, scale: 0.55, opacity: 0.85 },
+  { x: 920, y: 945, scale: 0.42, opacity: 0.75 },
+  { x: 1600, y: 910, scale: 0.65, opacity: 0.88 },
+  { x: 2200, y: 950, scale: 0.35, opacity: 0.7 },
+  { x: 2900, y: 915, scale: 0.58, opacity: 0.82 },
+  { x: 3600, y: 940, scale: 0.44, opacity: 0.78 },
+];
+
+/** silhueta de uma nuvem baixa: base reta, topo ondulado */
 function cloudPath(x: number, y: number, scale: number) {
   const w = 260 * scale;
   const h = 74 * scale;
@@ -104,49 +113,107 @@ function hillPath(seedPhase: number, amplitude: number, baseline: number, harmon
     points.push(`${x.toFixed(1)},${y.toFixed(1)}`);
   }
 
-  return `M -2,${baseline + 260} L ${points.join(" L ")} L ${VIEW_WIDTH + 2},${baseline + 260} Z`;
+  return `M -2,${baseline + 280} L ${points.join(" L ")} L ${VIEW_WIDTH + 2},${baseline + 280} Z`;
+}
+
+/** silhueta de um passaro voando ao longe (arco em V) */
+function birdPath(x: number, y: number, s: number) {
+  return `M ${x - 14 * s} ${y + 4 * s} Q ${x - 7 * s} ${y - 6 * s} ${x} ${y} Q ${x + 7 * s} ${y - 6 * s} ${x + 14 * s} ${y + 4 * s}`;
 }
 
 export function createPanoramaSvg(variant: SceneVariant = "day"): string {
   const sky = SKY_PALETTES[variant];
   const isNight = variant === "night";
+  const isEvening = variant === "evening";
+  const isMorning = variant === "morning";
 
   const clouds: string[] = [];
+  const cloudList = isEvening ? CLOUDS_EVENING : CLOUDS_DAY;
 
-  // nuvens só aparecem em dia/manhã; noite ganha estrelas, entardecer fica limpo
-  if (!isNight && variant !== "evening") {
-    for (const cloud of CLOUDS) {
+  if (!isNight) {
+    const cloudFill = isEvening ? "url(#cloudFillEvening)" : "url(#cloudFill)";
+    for (const cloud of cloudList) {
       const positions = [cloud.x];
       if (cloud.x < 400) positions.push(cloud.x + VIEW_WIDTH);
       if (cloud.x > VIEW_WIDTH - 400) positions.push(cloud.x - VIEW_WIDTH);
 
       for (const x of positions) {
         clouds.push(
-          `<path d="${cloudPath(x, cloud.y, cloud.scale)}" fill="url(#cloudFill)" opacity="${cloud.opacity}"/>`,
+          `<path d="${cloudPath(x, cloud.y, cloud.scale)}" fill="${cloudFill}" opacity="${cloud.opacity}"/>`,
         );
         clouds.push(
-          `<ellipse cx="${x}" cy="${cloud.y - 4}" rx="${300 * cloud.scale}" ry="${16 * cloud.scale}" fill="#FFFFFF" opacity="${cloud.opacity * 0.5}"/>`,
+          `<ellipse cx="${x}" cy="${cloud.y - 4}" rx="${300 * cloud.scale}" ry="${16 * cloud.scale}" fill="${isEvening ? "#FFE3B0" : "#FFFFFF"}" opacity="${cloud.opacity * 0.45}"/>`,
         );
       }
     }
   }
 
-  // estrelas aleatórias na variante noite
+  // estrelas na noite: 340 estrelas deterministas
   const stars: string[] = [];
   if (isNight) {
-    // LCG determinístico para posições estáveis
     let rng = 0xdeadbeef;
     const rand = () => {
       rng = (Math.imul(1664525, rng) + 1013904223) | 0;
       return (rng >>> 0) / 4294967296;
     };
-    for (let i = 0; i < 280; i++) {
+    for (let i = 0; i < 340; i++) {
       const sx = rand() * VIEW_WIDTH;
-      const sy = rand() * (HORIZON - 40);
-      const sr = 1.2 + rand() * 2.8;
-      const op = 0.4 + rand() * 0.6;
+      const sy = rand() * (HORIZON - 35);
+      const sr = 1.0 + rand() * 2.6;
+      const op = 0.35 + rand() * 0.65;
       stars.push(`<circle cx="${sx.toFixed(0)}" cy="${sy.toFixed(0)}" r="${sr.toFixed(1)}" fill="#FFFFFF" opacity="${op.toFixed(2)}"/>`);
     }
+  }
+
+  // passaros voando ao longe (manha/dia)
+  const birds: string[] = [];
+  if (isMorning || variant === "day") {
+    const birdCoords = [
+      { x: 1480, y: 780, s: 0.8 },
+      { x: 1520, y: 765, s: 0.7 },
+      { x: 1560, y: 790, s: 0.65 },
+      { x: 1610, y: 810, s: 0.55 },
+      { x: 3100, y: 820, s: 0.75 },
+      { x: 3140, y: 805, s: 0.6 },
+    ];
+    for (const b of birdCoords) {
+      birds.push(
+        `<path d="${birdPath(b.x, b.y, b.s)}" fill="none" stroke="${isMorning ? "#2A4560" : "#2E4F70"}" stroke-width="${1.6 * b.s}" stroke-linecap="round" opacity="0.55"/>`,
+      );
+    }
+  }
+
+  // astros celestes (sol ou lua no fundo)
+  let celestialBody = "";
+  if (isNight) {
+    // lua crescente prateada com halo suave
+    const lx = 920;
+    const ly = 540;
+    celestialBody = `
+      <circle cx="${lx}" cy="${ly}" r="140" fill="url(#moonGlow)" />
+      <!-- lua crescente usando mascara -->
+      <mask id="moonMask">
+        <rect x="0" y="0" width="${VIEW_WIDTH}" height="${VIEW_HEIGHT}" fill="#FFFFFF"/>
+        <circle cx="${lx + 18}" cy="${ly - 10}" r="40" fill="#000000"/>
+      </mask>
+      <circle cx="${lx}" cy="${ly}" r="42" fill="#FFF8E7" mask="url(#moonMask)" opacity="0.95"/>
+    `;
+  } else if (isEvening) {
+    // sol dourado do entardecer se pondo no horizonte
+    const sx = 2048;
+    const sy = HORIZON - 18;
+    celestialBody = `
+      <circle cx="${sx}" cy="${sy}" r="380" fill="url(#sunSunsetGlow)" />
+      <circle cx="${sx}" cy="${sy}" r="55" fill="#FFF5D6" opacity="0.92" />
+    `;
+  } else if (isMorning) {
+    // sol nascente suave
+    const sx = 640;
+    const sy = HORIZON - 90;
+    celestialBody = `
+      <circle cx="${sx}" cy="${sy}" r="320" fill="url(#sunMorningGlow)" />
+      <circle cx="${sx}" cy="${sy}" r="48" fill="#FFFBF0" opacity="0.9" />
+    `;
   }
 
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${VIEW_WIDTH}" height="${VIEW_HEIGHT}" viewBox="0 0 ${VIEW_WIDTH} ${VIEW_HEIGHT}">
@@ -159,17 +226,41 @@ export function createPanoramaSvg(variant: SceneVariant = "day"): string {
     </linearGradient>
 
     <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="${isNight ? "#1A2818" : "#DCEBC8"}"/>
-      <stop offset="0.035" stop-color="${isNight ? "#1E3018" : GRASS_FAR_COLOR}"/>
-      <stop offset="0.16" stop-color="${isNight ? "#1C2C14" : "#6FAE44"}"/>
-      <stop offset="0.45" stop-color="${isNight ? "#162210" : "#4C8C31"}"/>
-      <stop offset="1" stop-color="${isNight ? "#0E1A0C" : GRASS_NEAR_COLOR}"/>
+      <stop offset="0" stop-color="${isNight ? "#142214" : isEvening ? "#543C1E" : "#D4E8C2"}"/>
+      <stop offset="0.035" stop-color="${isNight ? "#182C14" : isEvening ? "#5E4624" : GRASS_FAR_COLOR}"/>
+      <stop offset="0.16" stop-color="${isNight ? "#172A12" : isEvening ? "#48361A" : "#6EAE44"}"/>
+      <stop offset="0.45" stop-color="${isNight ? "#13200E" : isEvening ? "#3A2A14" : "#4A8830"}"/>
+      <stop offset="1" stop-color="${isNight ? "#0C160A" : isEvening ? "#2A1E0E" : GRASS_NEAR_COLOR}"/>
     </linearGradient>
 
     <radialGradient id="cloudFill" cx="0.5" cy="0.75" r="0.75">
       <stop offset="0" stop-color="#FFFFFF"/>
       <stop offset="0.65" stop-color="#FFFFFF"/>
       <stop offset="1" stop-color="#EAF4FC"/>
+    </radialGradient>
+
+    <radialGradient id="cloudFillEvening" cx="0.5" cy="0.75" r="0.75">
+      <stop offset="0" stop-color="#FFF3D4"/>
+      <stop offset="0.55" stop-color="#F8C888"/>
+      <stop offset="1" stop-color="#D97A3E"/>
+    </radialGradient>
+
+    <radialGradient id="sunSunsetGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFA844" stop-opacity="0.85"/>
+      <stop offset="0.4" stop-color="#FF7B24" stop-opacity="0.42"/>
+      <stop offset="1" stop-color="#FF7B24" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="sunMorningGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFEAA8" stop-opacity="0.75"/>
+      <stop offset="0.45" stop-color="#FFD478" stop-opacity="0.32"/>
+      <stop offset="1" stop-color="#FFD478" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="moonGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#D8E8F8" stop-opacity="0.45"/>
+      <stop offset="0.5" stop-color="#90B8E0" stop-opacity="0.15"/>
+      <stop offset="1" stop-color="#90B8E0" stop-opacity="0"/>
     </radialGradient>
 
     <linearGradient id="haze" x1="0" y1="0" x2="0" y2="1">
@@ -188,15 +279,19 @@ export function createPanoramaSvg(variant: SceneVariant = "day"): string {
   <rect x="0" y="${HORIZON}" width="${VIEW_WIDTH}" height="${HORIZON}" fill="url(#ground)"/>
 
   ${stars.length > 0 ? `<g>${stars.join("")}</g>` : ""}
+  ${celestialBody}
 
-  <path d="${hillPath(0.7, 34, HORIZON + 2, [3, 7, 13])}" fill="${isNight ? "#162812" : "#8FB878"}" opacity="0.62"/>
-  <path d="${hillPath(2.3, 23, HORIZON + 9, [5, 11, 19])}" fill="${isNight ? "#122010" : "#639C4C"}" opacity="0.8"/>
-  <path d="${hillPath(4.1, 14, HORIZON + 17, [2, 9, 17])}" fill="${isNight ? "#0E1A0C" : "#4E8C39"}" opacity="0.92"/>
+  <!-- montanhas distantes (3 camadas com profundidade atmosferica) -->
+  <path d="${hillPath(0.7, 44, HORIZON + 2, [3, 7, 13])}" fill="${isNight ? "#142410" : isEvening ? "#5C3E20" : "#8AB474"}" opacity="0.6"/>
+  <path d="${hillPath(2.3, 30, HORIZON + 10, [5, 11, 19])}" fill="${isNight ? "#101D0E" : isEvening ? "#4C3218" : "#60964A"}" opacity="0.78"/>
+  <path d="${hillPath(4.1, 18, HORIZON + 20, [2, 9, 17])}" fill="${isNight ? "#0C180B" : isEvening ? "#3E2812" : "#4C8836"}" opacity="0.92"/>
 
-  <rect x="0" y="${HORIZON - 60}" width="${VIEW_WIDTH}" height="62" fill="url(#haze)"/>
-  <rect x="0" y="${HORIZON}" width="${VIEW_WIDTH}" height="90" fill="url(#groundHaze)"/>
+  <!-- nevoa no horizonte para fusao suave do solo -->
+  <rect x="0" y="${HORIZON - 70}" width="${VIEW_WIDTH}" height="72" fill="url(#haze)"/>
+  <rect x="0" y="${HORIZON}" width="${VIEW_WIDTH}" height="110" fill="url(#groundHaze)"/>
 
   <g>${clouds.join("")}</g>
+  ${birds.length > 0 ? `<g>${birds.join("")}</g>` : ""}
 </svg>`;
 }
 

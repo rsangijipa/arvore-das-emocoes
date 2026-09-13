@@ -17,6 +17,7 @@ import { useSessionId } from "@/hooks/useSessionId";
 import { useEmotionalSession } from "@/hooks/useEmotionalSession";
 import { useFavoritesSync } from "@/hooks/useFavoritesSync";
 import { useSoundscape } from "@/hooks/useSoundscape";
+import { soundscape } from "@/lib/audio/soundscape";
 import { postFavorite, postInteraction } from "@/lib/client/interactions-api";
 import { fetchQuotesByTheme } from "@/lib/client/quote-api";
 import { createTreeSeed, MESSAGE_LEAF_COUNT } from "@/lib/theme/scene-tokens";
@@ -70,8 +71,15 @@ export function ExperienceRoot() {
   const [introLocked, setIntroLocked] = useState(true);
   const [favoritesOpen, setFavoritesOpen] = useState(false);
   const [favoriteFeedback, setFavoriteFeedback] = useState<string | null>(null);
-  /** ambiente visual: sempre abre em "morning" */
-  const [sceneVariant] = useState<SceneVariant>("morning");
+  /** ambiente visual: Manhã, Tarde, Noite */
+  const [sceneVariant, setSceneVariant] = useState<SceneVariant>(() => {
+    if (typeof window === "undefined") return "morning";
+    const saved = window.localStorage.getItem("arvore-scene-variant");
+    if (saved === "morning" || saved === "day" || saved === "evening" || saved === "night") {
+      return saved;
+    }
+    return "morning";
+  });
   /** true enquanto a folha animada ainda não voltou à copa após fechar o painel */
   const [isLeafReturning, setIsLeafReturning] = useState(false);
   /** quantas folhas foram lidas nesta sessão de árvore */
@@ -121,6 +129,23 @@ export function ExperienceRoot() {
   useEffect(() => {
     window.localStorage.setItem("arvore-sensory-mode", sensoryMode);
   }, [sensoryMode]);
+
+  useEffect(() => {
+    window.localStorage.setItem("arvore-scene-variant", sceneVariant);
+    soundscape.setTimeOfDay(sceneVariant);
+  }, [sceneVariant]);
+
+  const handleSceneVariantChange = useCallback(
+    (variant: SceneVariant) => {
+      if (variant === sceneVariant) {
+        return;
+      }
+
+      playClick();
+      setSceneVariant(variant);
+    },
+    [playClick, sceneVariant],
+  );
 
   useEffect(() => {
     return () => {
@@ -611,7 +636,9 @@ export function ExperienceRoot() {
             onCheckOut={() => setCheckOutOpen(true)}
             sensoryMode={sensoryMode}
             onSensoryMode={setSensoryMode}
-            audioEnabled={process.env.NEXT_PUBLIC_ENABLE_AUDIO === "1"}
+            sceneVariant={sceneVariant}
+            onSceneVariantChange={handleSceneVariantChange}
+            audioEnabled={true}
             muted={muted}
             onToggleMute={toggleMute}
           />

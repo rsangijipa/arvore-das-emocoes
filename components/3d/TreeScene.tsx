@@ -8,6 +8,7 @@ import * as THREE from "three";
 
 import { FlyingLeaf, type FlyingLeafPhase } from "@/components/3d/FlyingLeaf";
 import { Foliage } from "@/components/3d/Foliage";
+import { GrassField } from "@/components/3d/GrassField";
 import { Panorama } from "@/components/3d/Panorama";
 import { TreeBark } from "@/components/3d/TreeBark";
 import { WindParticles } from "@/components/3d/WindParticles";
@@ -111,12 +112,15 @@ function AdaptiveQuality({
 
 /**
  * Textura procedural de grama gerada em canvas.
- * Gradiente radial (escurece do centro) + grain fractal suave.
+ *
+ * Base em gradiente radial (escurece do centro) + manchas de solo + milhares de
+ * fios de capim desenhados a mao com duplicacao nas bordas (tile sem emenda) +
+ * flores miudas e pedrinhas. Tudo uma unica textura, gerada uma vez.
  */
 function createGroundTexture(): THREE.CanvasTexture | null {
   if (typeof document === "undefined") return null;
 
-  const size = 512;
+  const size = 1024;
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
@@ -148,6 +152,93 @@ function createGroundTexture(): THREE.CanvasTexture | null {
   }
 
   ctx.putImageData(imageData, 0, 0);
+
+  // --------------------------------------------------------- RNG local
+  let rngState = 0x2f6d25;
+  const rand = () => {
+    rngState = (Math.imul(1664525, rngState) + 1013904223) | 0;
+    return (rngState >>> 0) / 4294967296;
+  };
+
+  const GREENS = ["#2F6D25", "#3E7E2C", "#4C8C31", "#5FA038", "#74B241", "#8AC44E", "#1E4A18"];
+
+  // manchas de solo e tufos (elipses de tons variados)
+  for (let i = 0; i < 260; i += 1) {
+    const cx = rand() * size;
+    const cy = rand() * size;
+    const rx = 14 + rand() * 70;
+    const ry = 6 + rand() * 26;
+    ctx.fillStyle = GREENS[Math.floor(rand() * GREENS.length)];
+    ctx.globalAlpha = 0.05 + rand() * 0.1;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, rx, ry, rand() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // fios de capim: curvas curtas com duplicacao nas bordas (tile continuo)
+  const strokes = 2600;
+  for (let i = 0; i < strokes; i += 1) {
+    const x = rand() * size;
+    const y = rand() * size;
+    const len = 6 + rand() * 13;
+    const angle = -Math.PI / 2 + (rand() - 0.5) * 1.5;
+    const bend = (rand() - 0.5) * 6;
+    ctx.strokeStyle = GREENS[Math.floor(rand() * GREENS.length)];
+    ctx.globalAlpha = 0.22 + rand() * 0.3;
+    ctx.lineWidth = 1 + rand() * 1.6;
+    ctx.lineCap = "round";
+
+    const draw = (ox: number) => {
+      const x0 = x + ox;
+      const midX = x0 + Math.cos(angle) * len * 0.5 + bend;
+      const midY = y + Math.sin(angle) * len * 0.5;
+      const endX = x0 + Math.cos(angle) * len + bend * 1.8;
+      const endY = y + Math.sin(angle) * len;
+      ctx.beginPath();
+      ctx.moveTo(x0, y);
+      ctx.quadraticCurveTo(midX, midY, endX, endY);
+      ctx.stroke();
+    };
+
+    draw(0);
+    if (x < 24) draw(size);
+    if (x > size - 24) draw(-size);
+  }
+
+  // flores miudas espalhadas
+  const FLOWERS = ["#F2EFE8", "#E6C978", "#C79AD0", "#F0B8A8", "#F4D58D"];
+  for (let i = 0; i < 110; i += 1) {
+    const cx = rand() * size;
+    const cy = rand() * size;
+    const r = 1.4 + rand() * 2.2;
+    ctx.globalAlpha = 0.5 + rand() * 0.4;
+    ctx.fillStyle = FLOWERS[Math.floor(rand() * FLOWERS.length)];
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+
+    // miolo amarelo em algumas
+    if (rand() < 0.4) {
+      ctx.fillStyle = "#E6C978";
+      ctx.globalAlpha = 0.9;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r * 0.45, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // pedrinhas discretas
+  ctx.globalAlpha = 0.3;
+  for (let i = 0; i < 46; i += 1) {
+    const cx = rand() * size;
+    const cy = rand() * size;
+    ctx.fillStyle = rand() < 0.5 ? "#8B8578" : "#6E6758";
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, 1.5 + rand() * 3.4, 1 + rand() * 2, rand() * Math.PI, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.globalAlpha = 1;
 
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
@@ -483,7 +574,14 @@ function SceneContent({
       <directionalLight position={[-6, 4.5, -5]} intensity={0.6} color="#9FBEDA" />
 
       <group position={TREE_OFFSET}>
-        <TreeBark branches={tree.branches} roots={tree.roots} detail={quality.detail} castShadow={quality.shadows} />
+        <TreeBark
+          branches={tree.branches}
+          roots={tree.roots}
+          detail={quality.detail}
+          castShadow={quality.shadows}
+          windStrength={quality.windStrength * emotionalProfile.wind * (sensoryMode === "minimal" ? 0 : sensoryMode === "calm" ? 0.45 : 1)}
+          reduceMotion={reduceMotion}
+        />
         <Foliage
           leaves={tree.leaves}
           messageLeaves={tree.messageLeaves}
@@ -516,6 +614,21 @@ function SceneContent({
         seed={seed}
         reduceMotion={reduceMotion}
         dimmed={messageOpen || introActive}
+      />
+
+      <GrassField
+        count={
+          sensoryMode === "minimal"
+            ? 0
+            : quality.profile === "safe"
+              ? 180
+              : quality.profile === "medium"
+                ? 380
+                : 640
+        }
+        seed={seed}
+        windStrength={quality.windStrength * emotionalProfile.wind * (sensoryMode === "minimal" ? 0 : sensoryMode === "calm" ? 0.45 : 1)}
+        reduceMotion={reduceMotion}
       />
 
       <Ground receiveShadow={quality.shadows} crownRadius={tree.crownRadius} />
