@@ -19,10 +19,61 @@ import {
   SUN_CAMERA_YAW,
   SUN_POSITION,
 } from "@/lib/theme/scene-tokens";
-import { type SceneVariant, SCENE_VARIANT_TOKENS } from "@/lib/theme/scene-variant";
+import { type SceneVariant, type SceneVariantTokens, SCENE_VARIANT_TOKENS } from "@/lib/theme/scene-variant";
 import { generateTree } from "@/lib/tree/generateTree";
 import type { QualityConfig, QualityProfile } from "@/types/performance";
 import type { EmotionalSceneProfile, SensoryMode } from "@/types/emotional-session";
+
+const TOKEN_COLOR_KEYS = ["skyColor", "groundColor", "ambientColor", "sunColor", "fogColor"] as const;
+const TOKEN_NUMBER_KEYS = [
+  "ambientIntensity",
+  "sunIntensity",
+  "leafEmissiveBoost",
+  "fogDensityMultiplier",
+  "toneMappingExposure",
+] as const;
+
+/** Interpola suavemente entre os tokens visuais de dia/noite ao trocar de variante,
+ * evitando o corte seco entre luzes/neblina de uma cena para outra. */
+function useSmoothSceneTokens(target: SceneVariantTokens): SceneVariantTokens {
+  const [tokens, setTokens] = useState<SceneVariantTokens>(target);
+  const colorScratch = useRef({
+    from: new THREE.Color(),
+    to: new THREE.Color(),
+  }).current;
+
+  useFrame((_, delta) => {
+    const rate = 1 - Math.exp(-delta * 1.6);
+    let changed = false;
+    const next: SceneVariantTokens = { ...tokens };
+
+    for (const key of TOKEN_COLOR_KEYS) {
+      const current = tokens[key];
+      const desired = target[key];
+      if (current === desired) continue;
+      colorScratch.from.set(current);
+      colorScratch.to.set(desired);
+      colorScratch.from.lerp(colorScratch.to, rate);
+      const hex = `#${colorScratch.from.getHexString()}`;
+      if (hex !== current) {
+        next[key] = hex;
+        changed = true;
+      }
+    }
+
+    for (const key of TOKEN_NUMBER_KEYS) {
+      const current = tokens[key];
+      const desired = target[key];
+      if (Math.abs(current - desired) < 0.0005) continue;
+      next[key] = THREE.MathUtils.lerp(current, desired, rate);
+      changed = true;
+    }
+
+    if (changed) setTokens(next);
+  });
+
+  return tokens;
+}
 
 export type TreeSceneProps = {
   seed: number;
@@ -373,7 +424,9 @@ function SceneContent({
   const sunRef = useRef<THREE.DirectionalLight | null>(null);
   const sunScratch = useMemo(() => new THREE.Vector3(), []);
 
-  const tokens = SCENE_VARIANT_TOKENS[sceneVariant];
+  const targetTokens = SCENE_VARIANT_TOKENS[sceneVariant];
+  const smoothTokens = useSmoothSceneTokens(targetTokens);
+  const tokens = smoothTokens;
 
   const [hoveredMessage, setHoveredMessage] = useState<number | null>(null);
   const [activeMessage, setActiveMessage] = useState<number | null>(null);
@@ -541,6 +594,8 @@ function SceneContent({
       const desired = framing.targetY + 0.05;
       controls.target.y += (desired - controls.target.y) * Math.min(1, delta * 2);
     }
+
+    gl.toneMappingExposure = tokens.toneMappingExposure;
 
     void state;
   });
